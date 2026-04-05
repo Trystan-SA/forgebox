@@ -1,0 +1,38 @@
+[Unit]
+Description=ForgeBox — AI task engine with Firecracker microVMs
+Documentation=https://github.com/forgebox/forgebox
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/forgebox/forgebox.yaml
+
+[Service]
+Type=notify
+User=forgebox
+Group=forgebox
+ExecStart=/usr/local/bin/forgebox serve --config /etc/forgebox/forgebox.yaml
+ExecReload=/bin/kill -HUP $MAINPID
+
+Restart=on-failure
+RestartSec=5
+WatchdogSec=30
+
+# KVM access
+SupplementaryGroups=kvm
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/forgebox
+PrivateTmp=true
+LimitNOFILE=65536
+LimitNPROC=4096
+TimeoutStopSec=30
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=forgebox
+
+[Install]
+WantedBy=multi-user.target

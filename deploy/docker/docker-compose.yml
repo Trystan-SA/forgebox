@@ -1,0 +1,95 @@
+# ForgeBox — Docker Compose
+# ==========================
+# Usage:
+#   docker compose up -d            # start all services
+#   docker compose up forgebox      # just the engine
+#   docker compose --profile dev up # include dev dashboard
+
+version: "3.9"
+
+services:
+  # ---------- ForgeBox engine ------------------------------------------------
+  forgebox:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    image: forgebox:latest
+    container_name: forgebox
+    privileged: true                           # required for /dev/kvm
+    devices:
+      - /dev/kvm:/dev/kvm
+    ports:
+      - "8420:8420"   # HTTP / REST API
+      - "8421:8421"   # gRPC
+    volumes:
+      - forgebox-data:/var/lib/forgebox
+      - ./../../forgebox.yaml:/etc/forgebox/forgebox.yaml:ro
+    environment:
+      - FORGEBOX_LOG_LEVEL=info
+      - FORGEBOX_DB_DSN=postgres://forgebox:forgebox@postgres:5432/forgebox?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - forgebox-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8420/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ---------- Dashboard (web UI) ---------------------------------------------
+  dashboard:
+    image: node:20-slim
+    container_name: forgebox-dashboard
+    working_dir: /app
+    command: ["sh", "-c", "npm install --production && npx next start -p 3000"]
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./../../web:/app
+    environment:
+      - NEXT_PUBLIC_API_URL=http://forgebox:8420
+    depends_on:
+      - forgebox
+    networks:
+      - forgebox-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ---------- Postgres -------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: forgebox-postgres
+    environment:
+      POSTGRES_USER: forgebox
+      POSTGRES_PASSWORD: forgebox
+      POSTGRES_DB: forgebox
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - forgebox-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U forgebox"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+networks:
+  forgebox-net:
+    driver: bridge
+
+volumes:
+  forgebox-data:
+  postgres-data:

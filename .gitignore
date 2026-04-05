@@ -1,0 +1,51 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go build cache and test output
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Vendor (use go modules)
+vendor/
+
+# Rootfs build artifacts
+rootfs/**/*.ext4
+rootfs/**/*.img
+
+# Runtime artifacts
+*.sock
+*.pid
+*.log
+
+# Config with secrets (keep the example)
+forgebox.yaml
+!forgebox.example.yaml
+.env
+.env.*
+!.env.example
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Firecracker runtime
+/tmp/firecracker-*
+*.vsock
+
+# Debug binaries
+__debug_bin*
+
+# Air hot-reload temp
+tmp/

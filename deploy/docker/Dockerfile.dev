@@ -1,0 +1,35 @@
+# ForgeBox — Development Dockerfile with hot-reload
+# ===================================================
+
+FROM golang:1.23-bookworm
+
+# Install dev / debug tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl git jq strace iproute2 iptables \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install hot-reload, linter, and debugger
+RUN go install github.com/air-verse/air@latest && \
+    go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest && \
+    go install github.com/go-delve/delve/cmd/dlv@latest
+
+# Install Firecracker (needed for local VM tests)
+ARG FIRECRACKER_VERSION=1.7.0
+RUN ARCH=$(uname -m) && \
+    curl -fsSL "https://github.com/firecracker-microvm/firecracker/releases/download/v${FIRECRACKER_VERSION}/firecracker-v${FIRECRACKER_VERSION}-${ARCH}.tgz" \
+    | tar -xz -C /tmp && \
+    mv /tmp/release-v${FIRECRACKER_VERSION}-${ARCH}/firecracker-v${FIRECRACKER_VERSION}-${ARCH} /usr/local/bin/firecracker && \
+    mv /tmp/release-v${FIRECRACKER_VERSION}-${ARCH}/jailer-v${FIRECRACKER_VERSION}-${ARCH} /usr/local/bin/jailer && \
+    chmod +x /usr/local/bin/firecracker /usr/local/bin/jailer && \
+    rm -rf /tmp/release-*
+
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+EXPOSE 8420 8421 2345
+
+# Delve debug port 2345, HTTP 8420, gRPC 8421
+CMD ["air", "-c", ".air.toml"]

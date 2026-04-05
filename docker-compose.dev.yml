@@ -1,0 +1,85 @@
+# ForgeBox Development Stack
+#
+# Start everything with:
+#   docker compose -f docker-compose.dev.yml up
+#
+# This runs the Go backend + web dashboard + PostgreSQL.
+# No Go, Node, or Firecracker needed on your machine — just Docker.
+
+services:
+  # Go backend (API server)
+  backend:
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile.dev
+    command: >
+      bash -c "
+        cd /workspace &&
+        go mod tidy &&
+        go run ./cmd/forgebox serve
+      "
+    volumes:
+      - .:/workspace
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    ports:
+      - "8420:8420"
+      - "8421:8421"
+    environment:
+      - FORGEBOX_VM_MODE=local
+      - FORGEBOX_LISTEN=:8420
+      - FORGEBOX_GRPC_LISTEN=:8421
+      - FORGEBOX_STORAGE_PATH=/workspace/data/forgebox.db
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8420/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # Web dashboard (Vite dev server)
+  dashboard:
+    image: node:22-bookworm-slim
+    working_dir: /app
+    command: >
+      bash -c "
+        npm install &&
+        npm run dev -- --host 0.0.0.0
+      "
+    volumes:
+      - ./web:/app
+      - dashboard-node-modules:/app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://backend:8420
+    restart: unless-stopped
+
+  # PostgreSQL (optional — backend defaults to SQLite)
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: forgebox
+      POSTGRES_PASSWORD: forgebox
+      POSTGRES_DB: forgebox
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U forgebox"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  go-mod-cache:
+  go-build-cache:
+  dashboard-node-modules:
+  pgdata:

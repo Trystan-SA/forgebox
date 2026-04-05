@@ -1,0 +1,33 @@
+{
+  "name": "ForgeBox Web Dashboard",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:22-bookworm",
+  "remoteUser": "node",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "bradlc.vscode-tailwindcss",
+        "esbenp.prettier-vscode"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+      }
+    }
+  },
+
+  "forwardPorts": [3000],
+
+  "portsAttributes": {
+    "3000": { "label": "Dashboard Dev Server", "onAutoForward": "openBrowser" }
+  },
+
+  "postCreateCommand": "npm install",
+  "postStartCommand": "npm run dev",
+
+  // The dashboard proxies API calls to localhost:8420.
+  // Start the root ForgeBox devcontainer for the backend,
+  // or point VITE_API_URL to a remote ForgeBox instance.
+  "postAttachCommand": "echo '>> Note: The dashboard proxies API calls to localhost:8420. Start the backend devcontainer or set VITE_API_URL to a remote ForgeBox instance.'"
+}

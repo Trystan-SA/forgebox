@@ -1,0 +1,97 @@
+# ForgeBox Helm values
+# =====================
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/forgebox/forgebox
+  tag: ""           # defaults to Chart.appVersion
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# -- Pod-level settings -------------------------------------------------------
+podAnnotations: {}
+podSecurityContext: {}
+
+securityContext:
+  privileged: true       # required for /dev/kvm
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: "4"
+    memory: 4Gi
+
+# -- Networking ---------------------------------------------------------------
+service:
+  type: ClusterIP
+  httpPort: 8420
+  grpcPort: 8421
+
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: forgebox.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# -- ForgeBox configuration ---------------------------------------------------
+config:
+  logLevel: info
+  storage:
+    driver: sqlite
+    dsn: "/var/lib/forgebox/forgebox.db"
+
+# -- VM defaults --------------------------------------------------------------
+vm:
+  cpus: 2
+  memoryMB: 512
+  diskSizeMB: 2048
+  kernelImage: ""       # path or URL; uses bundled default if empty
+  rootfsImage: ""       # path or URL; uses bundled default if empty
+  networkMode: tap      # tap | none
+  maxConcurrent: 10
+  idleTimeoutSec: 300
+
+# -- Provider secrets (reference existing Secrets) ----------------------------
+providers:
+  anthropic:
+    secretName: ""
+    secretKey: api-key
+  openai:
+    secretName: ""
+    secretKey: api-key
+  ollama:
+    endpoint: ""        # e.g. http://ollama.default.svc:11434
+
+# -- Persistence --------------------------------------------------------------
+persistence:
+  enabled: true
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 10Gi
+
+# -- Node selectors, tolerations, affinity ------------------------------------
+nodeSelector:
+  # Firecracker needs bare-metal or nested-virt nodes
+  # node.kubernetes.io/instance-type: metal
+  {}
+
+tolerations: []
+
+affinity: {}

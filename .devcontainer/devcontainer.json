@@ -1,0 +1,52 @@
+{
+  "name": "ForgeBox Full-Stack",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "forgebox",
+  "workspaceFolder": "/workspace",
+  "remoteUser": "vscode",
+
+  "features": {
+    "ghcr.io/devcontainers/features/go:1": {
+      "version": "1.23"
+    },
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "22"
+    },
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/eitsupi/devcontainer-features/ripgrep:1": {}
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.Go",
+        "dbaeumer.vscode-eslint",
+        "bradlc.vscode-tailwindcss",
+        "esbenp.prettier-vscode",
+        "humao.rest-client"
+      ],
+      "settings": {
+        "go.gopath": "/home/vscode/go",
+        "go.toolsManagement.autoUpdate": true,
+        "editor.formatOnSave": true,
+        "go.lintTool": "golangci-lint",
+        "go.lintFlags": ["--fast"]
+      }
+    }
+  },
+
+  "forwardPorts": [8420, 8421, 3000, 5432],
+
+  "portsAttributes": {
+    "8420": { "label": "ForgeBox API", "onAutoForward": "notify" },
+    "8421": { "label": "ForgeBox gRPC", "onAutoForward": "silent" },
+    "3000": { "label": "Web Dashboard", "onAutoForward": "openBrowser" },
+    "5432": { "label": "PostgreSQL", "onAutoForward": "silent" }
+  },
+
+  "postCreateCommand": "cd /workspace && go mod tidy && cd web && npm install",
+  "postStartCommand": "",
+
+  "shutdownAction": "stopCompose"
+}

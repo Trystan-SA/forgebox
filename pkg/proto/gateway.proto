@@ -1,0 +1,246 @@
+syntax = "proto3";
+
+package forgebox.gateway.v1;
+
+option go_package = "github.com/forgebox/forgebox/pkg/proto/gateway";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+// ForgeBoxGateway is the main client-facing API service.
+// It handles task lifecycle management, session interaction,
+// and discovery of available providers and tools.
+service ForgeBoxGateway {
+  // CreateTask creates a new AI task and streams events as it executes
+  // inside a Firecracker microVM.
+  rpc CreateTask(CreateTaskRequest) returns (stream TaskEvent);
+
+  // GetTask retrieves the current state of a task by ID.
+  rpc GetTask(GetTaskRequest) returns (Task);
+
+  // CancelTask requests cancellation of a running task.
+  rpc CancelTask(CancelTaskRequest) returns (google.protobuf.Empty);
+
+  // ListTasks returns tasks matching the given filter criteria.
+  rpc ListTasks(ListTasksRequest) returns (TaskList);
+
+  // SendMessage sends a follow-up message to an existing session and
+  // streams the resulting task events.
+  rpc SendMessage(SendMessageRequest) returns (stream TaskEvent);
+
+  // ListSessions returns all sessions for the authenticated user.
+  rpc ListSessions(ListSessionsRequest) returns (SessionList);
+
+  // GetSession retrieves a session and its message history.
+  rpc GetSession(GetSessionRequest) returns (Session);
+
+  // ListProviders returns all registered AI provider plugins and their models.
+  rpc ListProviders(google.protobuf.Empty) returns (ProviderList);
+
+  // ListTools returns all registered tool plugins.
+  rpc ListTools(google.protobuf.Empty) returns (ToolList);
+}
+
+// TaskStatus represents the lifecycle states of a task.
+enum TaskStatus {
+  TASK_STATUS_UNSPECIFIED = 0;
+  TASK_STATUS_PENDING     = 1;
+  TASK_STATUS_RUNNING     = 2;
+  TASK_STATUS_COMPLETED   = 3;
+  TASK_STATUS_FAILED      = 4;
+  TASK_STATUS_CANCELLED   = 5;
+  TASK_STATUS_TIMED_OUT   = 6;
+}
+
+// Task represents a single unit of AI work executed inside a microVM.
+message Task {
+  string id                                = 1;
+  TaskStatus status                        = 2;
+  string prompt                            = 3;
+  string result                            = 4;
+  string provider                          = 5;
+  string model                             = 6;
+  google.protobuf.Timestamp created_at     = 7;
+  google.protobuf.Timestamp completed_at   = 8;
+  // cost is the total cost in USD microdollars (1e-6 USD).
+  int64 cost                               = 9;
+  string user_id                           = 10;
+  string session_id                        = 11;
+}
+
+// TaskEvent is a streaming event emitted during task execution.
+message TaskEvent {
+  oneof event {
+    StatusUpdate status_update = 1;
+    ToolCallEvent tool_call    = 2;
+    ToolResultEvent tool_result = 3;
+    TextDelta text_delta       = 4;
+    ErrorEvent error           = 5;
+    DoneEvent done             = 6;
+  }
+}
+
+// StatusUpdate signals a task status transition.
+message StatusUpdate {
+  TaskStatus status = 1;
+  string message    = 2;
+}
+
+// ToolCallEvent signals that the AI model is invoking a tool.
+message ToolCallEvent {
+  string id    = 1;
+  string name  = 2;
+  bytes input  = 3;
+}
+
+// ToolResultEvent carries the result of a tool invocation back to the stream.
+message ToolResultEvent {
+  string tool_call_id = 1;
+  string content      = 2;
+  bool is_error       = 3;
+}
+
+// TextDelta carries an incremental chunk of AI-generated text.
+message TextDelta {
+  string content = 1;
+}
+
+// ErrorEvent signals a non-recoverable error during task execution.
+message ErrorEvent {
+  string code    = 1;
+  string message = 2;
+}
+
+// DoneEvent signals that task execution has finished.
+message DoneEvent {
+  string task_id      = 1;
+  TaskStatus status   = 2;
+  // total_duration_ms is wall-clock time from creation to completion.
+  int64 total_duration_ms = 3;
+}
+
+// CreateTaskRequest configures a new task to be executed.
+message CreateTaskRequest {
+  string prompt         = 1;
+  string provider       = 2;
+  string model          = 3;
+  repeated string tools = 4;
+  // timeout in seconds; 0 means use the server default.
+  int32 timeout         = 5;
+  bool network_access   = 6;
+  // memory_mb is the VM memory allocation in megabytes.
+  int32 memory_mb       = 7;
+  // vcpus is the number of virtual CPUs for the VM.
+  int32 vcpus           = 8;
+  // session_id to continue an existing session; empty creates a new one.
+  string session_id     = 9;
+}
+
+message GetTaskRequest {
+  string task_id = 1;
+}
+
+message CancelTaskRequest {
+  string task_id = 1;
+}
+
+message ListTasksRequest {
+  string user_id        = 1;
+  TaskStatus status     = 2;
+  int32 page_size       = 3;
+  string page_token     = 4;
+}
+
+message TaskList {
+  repeated Task tasks   = 1;
+  string next_page_token = 2;
+  int32 total_count     = 3;
+}
+
+// SendMessageRequest sends a follow-up message into an existing session.
+message SendMessageRequest {
+  string session_id = 1;
+  string content    = 2;
+}
+
+// Session represents a multi-turn conversation backed by one or more tasks.
+message Session {
+  string id                                = 1;
+  string user_id                           = 2;
+  google.protobuf.Timestamp created_at     = 3;
+  google.protobuf.Timestamp updated_at     = 4;
+  repeated Message messages                = 5;
+  string provider                          = 6;
+  string model                             = 7;
+}
+
+// Role identifies the author of a message within a session.
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_USER       = 1;
+  ROLE_ASSISTANT  = 2;
+  ROLE_SYSTEM     = 3;
+  ROLE_TOOL       = 4;
+}
+
+// Message is a single turn in a session conversation.
+message Message {
+  Role role                        = 1;
+  string content                   = 2;
+  repeated ToolCall tool_calls     = 3;
+  repeated ToolResult tool_results = 4;
+  google.protobuf.Timestamp timestamp = 5;
+}
+
+// ToolCall records a tool invocation requested by the model.
+message ToolCall {
+  string id   = 1;
+  string name = 2;
+  // input is the JSON-encoded arguments for the tool.
+  bytes input  = 3;
+}
+
+// ToolResult records the output of a tool invocation.
+message ToolResult {
+  string tool_call_id = 1;
+  string content      = 2;
+  bool is_error       = 3;
+}
+
+message ListSessionsRequest {
+  string user_id     = 1;
+  int32 page_size    = 2;
+  string page_token  = 3;
+}
+
+message SessionList {
+  repeated Session sessions = 1;
+  string next_page_token    = 2;
+  int32 total_count         = 3;
+}
+
+message GetSessionRequest {
+  string session_id = 1;
+}
+
+// Provider describes an AI provider plugin and its available models.
+message Provider {
+  string name            = 1;
+  repeated string models = 2;
+}
+
+message ProviderList {
+  repeated Provider providers = 1;
+}
+
+// Tool describes a registered tool plugin.
+message Tool {
+  string name        = 1;
+  string description = 2;
+  // schema is the JSON Schema definition for the tool's input.
+  bytes schema       = 3;
+}
+
+message ToolList {
+  repeated Tool tools = 1;
+}

@@ -1,0 +1,41 @@
+package tools
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+)
+
+// FileWriteTool creates or overwrites files.
+type FileWriteTool struct{}
+
+type fileWriteInput struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
+
+func (t *FileWriteTool) Name() string { return "file_write" }
+
+func (t *FileWriteTool) Execute(ctx context.Context, input json.RawMessage) (*Result, error) {
+	var in fileWriteInput
+	if err := json.Unmarshal(input, &in); err != nil {
+		return nil, fmt.Errorf("invalid input: %w", err)
+	}
+	if in.Path == "" {
+		return &Result{Content: "path is required", IsError: true}, nil
+	}
+
+	// Ensure parent directory exists.
+	dir := filepath.Dir(in.Path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return &Result{Content: fmt.Sprintf("cannot create directory: %s", err), IsError: true}, nil
+	}
+
+	if err := os.WriteFile(in.Path, []byte(in.Content), 0o644); err != nil {
+		return &Result{Content: fmt.Sprintf("write error: %s", err), IsError: true}, nil
+	}
+
+	return &Result{Content: fmt.Sprintf("wrote %d bytes to %s", len(in.Content), in.Path)}, nil
+}

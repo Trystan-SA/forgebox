@@ -1,0 +1,47 @@
+FROM mcr.microsoft.com/devcontainers/go:1.23-bookworm
+
+# Remove stale Yarn repo from base image, then install Node.js 22 via NodeSource
+RUN rm -f /etc/apt/sources.list.d/yarn.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" > /etc/apt/sources.list.d/nodesource.list \
+    && apt-get update \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install system packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ripgrep \
+    jq \
+    curl \
+    git \
+    sqlite3 \
+    protobuf-compiler \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Go tools as vscode user
+USER vscode
+
+# Set Go environment
+ENV GOPATH=/home/vscode/go
+ENV PATH="${GOPATH}/bin:/usr/local/go/bin:${PATH}"
+
+# Install protoc Go plugins
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest \
+    && go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+# Install air (Go hot-reload)
+RUN go install github.com/air-verse/air@latest
+
+# Install golangci-lint
+RUN go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+# Create workspace directory
+RUN sudo mkdir -p /workspace && sudo chown vscode:vscode /workspace
+
+WORKDIR /workspace
+
+USER vscode

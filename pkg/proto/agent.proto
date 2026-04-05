@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package forgebox.agent.v1;
+
+option go_package = "github.com/forgebox/forgebox/pkg/proto/agent";
+
+import "google/protobuf/empty.proto";
+
+// AgentService runs inside each Firecracker microVM and is called by the
+// host orchestrator over vsock. It provides tool execution, health
+// monitoring, and graceful shutdown capabilities.
+service AgentService {
+  // ExecuteTool runs a named tool inside the VM sandbox and returns
+  // the result. The host forwards tool calls from the AI model here.
+  rpc ExecuteTool(ExecuteToolRequest) returns (ExecuteToolResponse);
+
+  // Heartbeat checks that the agent is alive and reports resource usage.
+  // The host polls this at a regular interval to detect stuck VMs.
+  rpc Heartbeat(google.protobuf.Empty) returns (HeartbeatResponse);
+
+  // Shutdown requests a graceful shutdown of the agent process.
+  // The host calls this before terminating the microVM.
+  rpc Shutdown(google.protobuf.Empty) returns (google.protobuf.Empty);
+}
+
+// ExecuteToolRequest describes a tool invocation to be run inside the VM.
+message ExecuteToolRequest {
+  // tool_name is the registered name of the tool to execute.
+  string tool_name      = 1;
+  // input is the JSON-encoded arguments for the tool.
+  bytes input           = 2;
+  // timeout_seconds is the maximum wall-clock time allowed for this
+  // invocation. 0 means use the agent's default timeout.
+  int32 timeout_seconds = 3;
+}
+
+// ExecuteToolResponse carries the output of a tool execution.
+message ExecuteToolResponse {
+  // output is the tool's result, typically JSON-encoded.
+  string output      = 1;
+  // is_error indicates whether the tool execution failed.
+  bool is_error      = 2;
+  // duration_ms is the actual wall-clock time the execution took.
+  int64 duration_ms  = 3;
+  // exit_code is the process exit code when the tool runs as a subprocess.
+  int32 exit_code    = 4;
+}
+
+// HeartbeatResponse reports the health and resource usage of the VM agent.
+message HeartbeatResponse {
+  // uptime_seconds is how long the agent process has been running.
+  int64 uptime_seconds    = 1;
+  // memory_used_bytes is the current resident memory consumption.
+  int64 memory_used_bytes = 2;
+  // cpu_percent is the current CPU utilisation (0-100 per vCPU).
+  double cpu_percent      = 3;
+  // active_tools is the number of tool executions currently in flight.
+  int32 active_tools      = 4;
+}

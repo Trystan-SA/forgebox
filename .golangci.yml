@@ -1,0 +1,87 @@
+# golangci-lint configuration for ForgeBox
+# ==========================================
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+  tests: true
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - gosec
+    - revive
+    - gofumpt
+    - ineffassign
+    - unconvert
+    - gocritic
+    - misspell
+    - nolintlint
+    - bodyclose
+    - exportloopref
+    - whitespace
+    - prealloc
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: false
+
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment
+
+  gosec:
+    excludes:
+      - G104  # unhandled errors on deferred Close() — too noisy
+      - G304  # file path from variable — expected in our use case
+
+  revive:
+    rules:
+      - name: blank-imports
+      - name: context-as-argument
+      - name: dot-imports
+      - name: error-naming
+      - name: error-return
+      - name: exported
+      - name: increment-decrement
+      - name: var-naming
+      - name: package-comments
+        disabled: true
+      - name: unexported-return
+
+  gofumpt:
+    extra-rules: true
+
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+    disabled-checks:
+      - hugeParam
+      - rangeValCopy
+
+  misspell:
+    locale: US
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 50
+  max-same-issues: 5
+
+  exclude-rules:
+    # Test files can use dot imports and longer functions
+    - path: _test\.go
+      linters:
+        - revive
+        - gosec
+        - gocritic
+
+    # Generated protobuf code
+    - path: \.pb\.go$
+      linters:
+        - all

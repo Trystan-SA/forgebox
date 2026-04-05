@@ -1,0 +1,169 @@
+# ForgeBox configuration
+# ======================
+# Copy to forgebox.yaml and edit as needed.
+# Environment variables can be referenced as ${VAR_NAME}.
+
+# -- Server --------------------------------------------------------------------
+server:
+  # Address to listen on for the HTTP API.
+  http_addr: ":8420"
+
+  # Address to listen on for the gRPC API.
+  grpc_addr: ":8421"
+
+  # Log level: debug | info | warn | error
+  log_level: "info"
+
+  # Log format: json | text
+  log_format: "json"
+
+  # Graceful shutdown timeout.
+  shutdown_timeout: "30s"
+
+  # Enable pprof profiling endpoints on the HTTP server.
+  pprof: false
+
+# -- Virtual Machine defaults --------------------------------------------------
+vm:
+  # Mode: "local" for dev (runs tools in-process), "firecracker" for production.
+  mode: local
+
+  # Number of vCPUs per microVM.
+  cpus: 2
+
+  # Memory in megabytes per microVM.
+  memory_mb: 512
+
+  # Root disk size in megabytes.
+  disk_size_mb: 2048
+
+  # Path to the Linux kernel image used by Firecracker.
+  kernel_image: "/var/lib/forgebox/vmlinux"
+
+  # Path to the base rootfs ext4 image.
+  rootfs_image: "/var/lib/forgebox/rootfs.ext4"
+
+  # Network mode: tap | none
+  network_mode: "tap"
+
+  # Bridge interface name (used when network_mode is tap).
+  bridge: "fbr0"
+
+  # Maximum number of VMs that can run concurrently.
+  max_concurrent: 10
+
+  # Idle timeout before a VM is stopped.
+  idle_timeout: "5m"
+
+  # Path to the Firecracker binary.
+  firecracker_bin: "/usr/local/bin/firecracker"
+
+  # Path to the jailer binary (optional, enables sandboxing).
+  jailer_bin: "/usr/local/bin/jailer"
+
+# -- AI Providers --------------------------------------------------------------
+providers:
+  anthropic:
+    # API key. Prefer env var: ${ANTHROPIC_API_KEY}
+    api_key: ""
+    # Model to use for tasks.
+    model: "claude-sonnet-4-20250514"
+    # Max tokens per completion.
+    max_tokens: 8192
+
+  openai:
+    # API key. Prefer env var: ${OPENAI_API_KEY}
+    api_key: ""
+    model: "gpt-4o"
+    max_tokens: 4096
+    # Optional base URL for Azure OpenAI or compatible endpoints.
+    base_url: ""
+
+  ollama:
+    # Endpoint of the Ollama server.
+    endpoint: "http://localhost:11434"
+    model: "llama3"
+
+# -- Channels ------------------------------------------------------------------
+channels:
+  slack:
+    # Enable Slack channel integration.
+    enabled: false
+    # Bot token: ${SLACK_BOT_TOKEN}
+    bot_token: ""
+    # App token for Socket Mode: ${SLACK_APP_TOKEN}
+    app_token: ""
+    # Signing secret for webhook verification.
+    signing_secret: ""
+
+  discord:
+    # Enable Discord channel integration.
+    enabled: false
+    # Bot token: ${DISCORD_BOT_TOKEN}
+    bot_token: ""
+    # Application ID.
+    application_id: ""
+
+  webhook:
+    # Enable generic inbound webhooks.
+    enabled: false
+    # Shared secret for HMAC verification.
+    secret: ""
+
+# -- Authentication ------------------------------------------------------------
+auth:
+  # Authentication method: oidc | apikey | local | none
+  method: "local"
+
+  oidc:
+    issuer: ""
+    client_id: ""
+    client_secret: ""
+    redirect_url: "http://localhost:8420/auth/callback"
+
+  apikey:
+    # Header name for API key authentication.
+    header: "X-API-Key"
+
+  local:
+    # bcrypt-hashed admin password. Generate with: forgebox hash-password
+    admin_password_hash: ""
+
+# -- Storage -------------------------------------------------------------------
+storage:
+  # Driver: sqlite | postgres
+  driver: "sqlite"
+
+  sqlite:
+    path: "/var/lib/forgebox/forgebox.db"
+    # Enable WAL mode for better concurrent read performance.
+    wal: true
+
+  postgres:
+    # DSN. Prefer env var: ${DATABASE_URL}
+    dsn: ""
+    # Connection pool settings.
+    max_open_conns: 25
+    max_idle_conns: 5
+    conn_max_lifetime: "5m"
+
+# -- Telemetry ----------------------------------------------------------------
+telemetry:
+  # Enable OpenTelemetry traces.
+  tracing:
+    enabled: false
+    # OTLP endpoint (gRPC).
+    endpoint: "localhost:4317"
+    # Sample ratio: 0.0 (none) to 1.0 (all).
+    sample_ratio: 0.1
+
+  # Enable Prometheus metrics.
+  metrics:
+    enabled: true
+    # Path for the Prometheus scrape endpoint.
+    path: "/metrics"
+
+  # Enable structured audit logging.
+  audit:
+    enabled: false
+    path: "/var/log/forgebox/audit.log"

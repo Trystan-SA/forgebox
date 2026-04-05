@@ -1,0 +1,45 @@
+version: "3.8"
+
+services:
+  forgebox:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ..:/workspace:cached
+      - go-mod-cache:/home/vscode/go/pkg/mod
+      - npm-cache:/home/vscode/.npm
+    ports:
+      - "8420:8420"
+      - "8421:8421"
+      - "3000:3000"
+    environment:
+      FORGEBOX_CONFIG: /workspace/forgebox.yaml
+      FORGEBOX_VM_MODE: local
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sleep infinity
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: forgebox
+      POSTGRES_PASSWORD: forgebox
+      POSTGRES_DB: forgebox
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U forgebox -d forgebox"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  go-mod-cache:
+  npm-cache:
+  pgdata:

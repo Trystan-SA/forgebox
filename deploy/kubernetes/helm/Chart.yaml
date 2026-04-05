@@ -1,0 +1,18 @@
+apiVersion: v2
+name: forgebox
+description: ForgeBox — Run AI tasks inside Firecracker microVMs
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/forgebox/forgebox
+sources:
+  - https://github.com/forgebox/forgebox
+maintainers:
+  - name: ForgeBox Authors
+    url: https://github.com/forgebox/forgebox
+keywords:
+  - ai
+  - firecracker
+  - microvm
+  - llm
+  - agent

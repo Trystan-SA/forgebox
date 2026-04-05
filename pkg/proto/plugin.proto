@@ -1,0 +1,228 @@
+syntax = "proto3";
+
+package forgebox.plugin.v1;
+
+option go_package = "github.com/forgebox/forgebox/pkg/proto/plugin";
+
+import "google/protobuf/empty.proto";
+
+// PluginService is the base lifecycle service that every out-of-process
+// gRPC plugin must implement. The host uses it to discover, configure,
+// and shut down plugins.
+service PluginService {
+  // GetInfo returns metadata about this plugin (name, version, type).
+  rpc GetInfo(google.protobuf.Empty) returns (PluginInfo);
+
+  // Init passes host-supplied configuration to the plugin at startup.
+  rpc Init(InitRequest) returns (google.protobuf.Empty);
+
+  // Shutdown requests a graceful teardown of the plugin process.
+  rpc Shutdown(google.protobuf.Empty) returns (google.protobuf.Empty);
+}
+
+// ProviderPluginService is implemented by AI provider plugins (e.g.
+// Anthropic, OpenAI). It exposes model listing and streaming completion.
+service ProviderPluginService {
+  // ListModels returns the models this provider can serve.
+  rpc ListModels(google.protobuf.Empty) returns (ModelList);
+
+  // StreamCompletion sends a prompt to the model and streams back
+  // completion events (text deltas, tool calls, finish signals).
+  rpc StreamCompletion(CompletionRequest) returns (stream CompletionEvent);
+}
+
+// ToolPluginService is implemented by tool plugins (e.g. bash, file_edit,
+// web_search). Each plugin typically exposes a single tool.
+service ToolPluginService {
+  // GetSchema returns the tool's name, description, and JSON Schema
+  // so the host can register it with AI providers.
+  rpc GetSchema(google.protobuf.Empty) returns (ToolSchema);
+
+  // Execute runs the tool with the given input and returns the result.
+  rpc Execute(ExecuteRequest) returns (ExecuteResponse);
+
+  // IsReadOnly reports whether the given invocation would only read
+  // state. The host can use this to skip confirmation prompts.
+  rpc IsReadOnly(ExecuteRequest) returns (BoolResponse);
+}
+
+// ChannelPluginService is implemented by I/O channel plugins (e.g. Slack,
+// Discord, CLI). Channels bridge external messaging systems into ForgeBox.
+service ChannelPluginService {
+  // Listen opens a server-streaming connection. The plugin pushes
+  // inbound messages from the external system to the host.
+  rpc Listen(google.protobuf.Empty) returns (stream InboundMessage);
+
+  // Send delivers an outbound message to the external system.
+  rpc Send(OutboundMessage) returns (google.protobuf.Empty);
+}
+
+// --------------------------------------------------------------------------
+// Shared messages
+// --------------------------------------------------------------------------
+
+// PluginType classifies what capability a plugin provides.
+enum PluginType {
+  PLUGIN_TYPE_UNSPECIFIED = 0;
+  PLUGIN_TYPE_PROVIDER    = 1;
+  PLUGIN_TYPE_TOOL        = 2;
+  PLUGIN_TYPE_CHANNEL     = 3;
+}
+
+// PluginInfo describes a plugin's identity and type.
+message PluginInfo {
+  string name       = 1;
+  string version    = 2;
+  PluginType type   = 3;
+  string description = 4;
+}
+
+// InitRequest carries host-supplied key/value configuration to a plugin.
+message InitRequest {
+  map<string, string> config = 1;
+}
+
+// --------------------------------------------------------------------------
+// Provider plugin messages
+// --------------------------------------------------------------------------
+
+// Model describes a single AI model offered by a provider.
+message Model {
+  string id                = 1;
+  string name              = 2;
+  // max_context_tokens is the model's context window size.
+  int32 max_context_tokens = 3;
+  // supports_tools indicates whether this model can invoke tools.
+  bool supports_tools      = 4;
+  // supports_streaming indicates whether the model supports streaming.
+  bool supports_streaming  = 5;
+}
+
+message ModelList {
+  repeated Model models = 1;
+}
+
+// CompletionRole identifies the author of a completion message.
+enum CompletionRole {
+  COMPLETION_ROLE_UNSPECIFIED = 0;
+  COMPLETION_ROLE_USER        = 1;
+  COMPLETION_ROLE_ASSISTANT   = 2;
+  COMPLETION_ROLE_SYSTEM      = 3;
+  COMPLETION_ROLE_TOOL        = 4;
+}
+
+// CompletionMessage is a single turn in the conversation sent to the model.
+message CompletionMessage {
+  CompletionRole role = 1;
+  string content      = 2;
+  // tool_call_id is set when role is TOOL, linking the result to its call.
+  string tool_call_id = 3;
+}
+
+// CompletionRequest is the input to a streaming completion call.
+message CompletionRequest {
+  string model                          = 1;
+  repeated CompletionMessage messages   = 2;
+  // tools is the set of tool schemas available to the model.
+  repeated ToolSchema tools             = 3;
+  // max_tokens caps the response length; 0 means provider default.
+  int32 max_tokens                      = 4;
+  double temperature                    = 5;
+}
+
+// CompletionEvent is a single streaming event from the provider.
+message CompletionEvent {
+  oneof event {
+    TextDelta text_delta         = 1;
+    ToolCallDelta tool_call      = 2;
+    CompletionDone done          = 3;
+    CompletionError error        = 4;
+  }
+}
+
+// TextDelta carries an incremental chunk of model-generated text.
+message TextDelta {
+  string content = 1;
+}
+
+// ToolCallDelta signals that the model is requesting a tool invocation.
+message ToolCallDelta {
+  string id    = 1;
+  string name  = 2;
+  // arguments is the JSON-encoded tool input.
+  bytes arguments = 3;
+}
+
+// CompletionDone signals that the model has finished generating.
+message CompletionDone {
+  // finish_reason is "stop", "tool_use", "max_tokens", etc.
+  string finish_reason   = 1;
+  // usage tracks token consumption for billing.
+  TokenUsage usage       = 2;
+}
+
+// TokenUsage reports token consumption for a completion.
+message TokenUsage {
+  int32 prompt_tokens     = 1;
+  int32 completion_tokens = 2;
+  int32 total_tokens      = 3;
+}
+
+// CompletionError reports a model-level error during streaming.
+message CompletionError {
+  string code    = 1;
+  string message = 2;
+}
+
+// --------------------------------------------------------------------------
+// Tool plugin messages
+// --------------------------------------------------------------------------
+
+// ToolSchema describes a tool's interface so providers can invoke it.
+message ToolSchema {
+  string name        = 1;
+  string description = 2;
+  // input_schema is the JSON Schema for the tool's input parameters.
+  bytes input_schema = 3;
+}
+
+// ExecuteRequest carries the input for a single tool invocation.
+message ExecuteRequest {
+  // input is the JSON-encoded arguments matching the tool's schema.
+  bytes input = 1;
+}
+
+// ExecuteResponse carries the result of a tool invocation.
+message ExecuteResponse {
+  string output  = 1;
+  bool is_error  = 2;
+}
+
+// BoolResponse is a simple boolean wrapper.
+message BoolResponse {
+  bool value = 1;
+}
+
+// --------------------------------------------------------------------------
+// Channel plugin messages
+// --------------------------------------------------------------------------
+
+// InboundMessage represents a message received from an external channel.
+message InboundMessage {
+  string channel_id  = 1;
+  string sender_id   = 2;
+  string sender_name = 3;
+  string content     = 4;
+  // thread_id groups messages in a thread; empty for top-level messages.
+  string thread_id   = 5;
+  map<string, string> metadata = 6;
+}
+
+// OutboundMessage represents a message to be sent to an external channel.
+message OutboundMessage {
+  string channel_id  = 1;
+  string content     = 2;
+  // thread_id places the reply in a specific thread.
+  string thread_id   = 3;
+  map<string, string> metadata = 4;
+}

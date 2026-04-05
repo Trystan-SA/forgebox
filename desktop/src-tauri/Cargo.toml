@@ -1,0 +1,31 @@
+[package]
+name = "forgebox-desktop"
+version = "0.1.0"
+edition = "2021"
+description = "ForgeBox desktop app — embeds the web dashboard with native SSO authentication"
+authors = ["ForgeBox Contributors"]
+license = "MIT"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "protocol-asset"] }
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-store = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+oauth2 = "4"
+open = "5"
+url = "2"
+anyhow = "1"
+thiserror = "2"
+rand = "0.8"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

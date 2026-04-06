@@ -49,3 +49,6 @@ __debug_bin*
 
 # Air hot-reload temp
 tmp/
+
+# Web frontend
+web/node_modules/

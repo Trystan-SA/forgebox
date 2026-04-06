@@ -1,0 +1,114 @@
+@use 'variables' as *;
+
+// --- Responsive ---
+@mixin sm { @media (min-width: $bp-sm) { @content; } }
+@mixin md { @media (min-width: $bp-md) { @content; } }
+@mixin lg { @media (min-width: $bp-lg) { @content; } }
+@mixin xl { @media (min-width: $bp-xl) { @content; } }
+
+// --- Layout ---
+@mixin flex-center {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+@mixin flex-between {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+
+// --- Components ---
+@mixin card {
+	background: $neutral-0;
+	border: 1px solid $neutral-200;
+	border-radius: $radius-xl;
+	box-shadow: $shadow-sm;
+}
+
+@mixin input-base {
+	display: block;
+	width: 100%;
+	padding: $space-2 $space-3;
+	font-size: $text-sm;
+	line-height: $leading-normal;
+	color: $neutral-800;
+	background: $neutral-0;
+	border: 1px solid $neutral-300;
+	border-radius: $radius-lg;
+	box-shadow: $shadow-sm;
+	transition: border-color $transition-fast, box-shadow $transition-fast;
+
+	&::placeholder {
+		color: $neutral-400;
+	}
+
+	&:focus {
+		outline: none;
+		border-color: $primary-500;
+		box-shadow: 0 0 0 1px $primary-500;
+	}
+
+	&:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+}
+
+@mixin btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: $space-2 $space-4;
+	font-size: $text-sm;
+	font-weight: $font-medium;
+	border-radius: $radius-lg;
+	transition: all $transition-fast;
+	cursor: pointer;
+	border: none;
+
+	&:focus-visible {
+		outline: 2px solid $primary-500;
+		outline-offset: 2px;
+	}
+
+	&:disabled {
+		opacity: 0.5;
+		pointer-events: none;
+	}
+}
+
+@mixin badge {
+	display: inline-flex;
+	align-items: center;
+	gap: $space-1;
+	padding: $space-1 $space-2;
+	font-size: $text-xs;
+	font-weight: $font-medium;
+	border-radius: $radius-full;
+}
+
+// --- Scrollbar ---
+@mixin scrollbar-thin {
+	scrollbar-width: thin;
+	scrollbar-color: $neutral-300 transparent;
+
+	&::-webkit-scrollbar {
+		width: 6px;
+	}
+	&::-webkit-scrollbar-track {
+		background: transparent;
+	}
+	&::-webkit-scrollbar-thumb {
+		background: $neutral-300;
+		border-radius: 3px;
+	}
+}
+
+// --- Truncate ---
+@mixin truncate {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}

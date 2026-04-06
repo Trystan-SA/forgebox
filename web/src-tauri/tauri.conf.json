@@ -1,0 +1,38 @@
+{
+	"$schema": "https://raw.githubusercontent.com/niclas/tauri-settings-schema/refs/heads/v2/schemas/tauri.schema.json",
+	"productName": "ForgeBox",
+	"version": "0.1.0",
+	"identifier": "com.forgebox.dashboard",
+	"build": {
+		"frontendDist": "../build",
+		"devUrl": "http://localhost:3000",
+		"beforeDevCommand": "npm run dev",
+		"beforeBuildCommand": "npm run build"
+	},
+	"app": {
+		"title": "ForgeBox",
+		"windows": [
+			{
+				"title": "ForgeBox",
+				"width": 1280,
+				"height": 800,
+				"resizable": true,
+				"fullscreen": false
+			}
+		],
+		"security": {
+			"csp": null
+		}
+	},
+	"bundle": {
+		"active": true,
+		"targets": "all",
+		"icon": [
+			"icons/32x32.png",
+			"icons/128x128.png",
+			"icons/128x128@2x.png",
+			"icons/icon.icns",
+			"icons/icon.ico"
+		]
+	}
+}

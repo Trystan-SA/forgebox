@@ -1,19 +1,25 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
+import { sveltekit } from '@sveltejs/kit/vite';
+import { defineConfig } from 'vite';
 
 export default defineConfig({
-  plugins: [react()],
-  server: {
-    port: 3000,
-    proxy: {
-      "/api": {
-        target: "http://localhost:8420",
-        changeOrigin: true,
-      },
-    },
-  },
-  build: {
-    outDir: "dist",
-    sourcemap: true,
-  },
+	plugins: [sveltekit()],
+	server: {
+		port: 3000,
+		proxy: {
+			'/api': {
+				target: process.env.VITE_API_URL || 'http://localhost:8420',
+				changeOrigin: true
+			}
+		}
+	},
+	css: {
+		preprocessorOptions: {
+			scss: {
+				additionalData: `
+					@use '$lib/styles/variables' as *;
+					@use '$lib/styles/mixins' as *;
+				`
+			}
+		}
+	}
 });

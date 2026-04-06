@@ -1,0 +1,41 @@
+@use 'variables' as *;
+@use 'mixins' as *;
+@use 'reset';
+
+// --- Base element styles ---
+h1 { font-size: $text-2xl; font-weight: $font-bold; color: $neutral-900; }
+h2 { font-size: $text-lg; font-weight: $font-semibold; color: $neutral-900; }
+
+// --- Utility classes (minimal set) ---
+.btn-primary {
+	@include btn;
+	background: $primary-600;
+	color: $neutral-0;
+
+	&:hover { background: $primary-700; }
+}
+
+.btn-secondary {
+	@include btn;
+	background: $neutral-0;
+	color: $neutral-700;
+	border: 1px solid $neutral-300;
+
+	&:hover { background: $neutral-50; }
+}
+
+.btn-danger {
+	@include btn;
+	background: $error-600;
+	color: $neutral-0;
+
+	&:hover { background: $error-700; }
+}
+
+.btn-ghost {
+	@include btn;
+	background: transparent;
+	color: $neutral-600;
+
+	&:hover { background: $neutral-100; }
+}

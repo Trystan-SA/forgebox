@@ -13,6 +13,7 @@
     "typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
+    "@xyflow/svelte": "^1.0.0",
     "date-fns": "^4.1.0"
   },
   "devDependencies": {

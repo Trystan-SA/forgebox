@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { auth, currentUser, isAdmin, userRole } from '$lib/stores/auth';
+	import { auth, currentUser } from '$lib/stores/auth';
 	import { goto } from '$app/navigation';
 
 	interface Props {
@@ -12,23 +12,6 @@
 		auth.logout();
 		goto('/login');
 	}
-
-	function switchView() {
-		const role = $userRole;
-		if (role === 'admin') {
-			// Toggle between admin and user view
-			const isAdminRoute = window.location.pathname.startsWith('/dashboard') ||
-				window.location.pathname.startsWith('/users') ||
-				window.location.pathname.startsWith('/token-usage') ||
-				window.location.pathname.startsWith('/observability') ||
-				window.location.pathname.startsWith('/providers') ||
-				window.location.pathname.startsWith('/channels') ||
-				window.location.pathname.startsWith('/vm-settings') ||
-				window.location.pathname.startsWith('/audit');
-
-			goto(isAdminRoute ? '/home' : '/dashboard');
-		}
-	}
 </script>
 
 <header class="topbar">
@@ -39,12 +22,6 @@
 	</div>
 
 	<div class="topbar__right">
-		{#if $isAdmin}
-			<button class="topbar__switch" onclick={switchView}>
-				Switch View
-			</button>
-		{/if}
-
 		{#if $currentUser}
 			<span class="topbar__user">{$currentUser.name || $currentUser.email}</span>
 		{/if}
@@ -75,16 +52,6 @@
 			display: flex;
 			align-items: center;
 			gap: $space-4;
-		}
-
-		&__switch {
-			@include btn;
-			background: $primary-50;
-			color: $primary-700;
-			font-size: $text-xs;
-			padding: $space-1 $space-3;
-
-			&:hover { background: $primary-100; }
 		}
 
 		&__user {

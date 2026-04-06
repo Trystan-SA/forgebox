@@ -13,10 +13,15 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"crypto/rand"
+	"encoding/hex"
+
+	"github.com/forgebox/forgebox/internal/auth"
 	"github.com/forgebox/forgebox/internal/engine"
 	"github.com/forgebox/forgebox/internal/plugins"
 	"github.com/forgebox/forgebox/internal/sessions"
@@ -130,6 +135,20 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/v1/sessions", s.handleListSessions)
 	s.mux.HandleFunc("GET /api/v1/sessions/{id}", s.handleGetSession)
 	s.mux.HandleFunc("POST /api/v1/sessions/{id}/message", s.handleSendMessage)
+
+	// Setup endpoint (first-install bootstrap).
+	s.mux.HandleFunc("GET /api/v1/setup/status", s.handleSetupStatus)
+	s.mux.HandleFunc("POST /api/v1/setup", s.handleSetup)
+
+	// Auth endpoints.
+	s.mux.HandleFunc("POST /api/v1/auth/login", s.handleLogin)
+
+	// Automation endpoints.
+	s.mux.HandleFunc("GET /api/v1/automations", s.handleListAutomations)
+	s.mux.HandleFunc("POST /api/v1/automations", s.handleCreateAutomation)
+	s.mux.HandleFunc("GET /api/v1/automations/{id}", s.handleGetAutomation)
+	s.mux.HandleFunc("PUT /api/v1/automations/{id}", s.handleUpdateAutomation)
+	s.mux.HandleFunc("DELETE /api/v1/automations/{id}", s.handleDeleteAutomation)
 
 	// Discovery endpoints.
 	s.mux.HandleFunc("GET /api/v1/providers", s.handleListProviders)
@@ -295,6 +314,290 @@ func (s *Server) handleListTools(w http.ResponseWriter, r *http.Request) {
 		schemas[i] = t.Schema()
 	}
 	writeJSON(w, http.StatusOK, schemas)
+}
+
+// --- Automation handlers ---
+
+func (s *Server) handleListAutomations(w http.ResponseWriter, r *http.Request) {
+	automations, err := s.store.ListAutomations(r.Context(), sdk.AutomationFilter{
+		UserID: getUserID(r),
+		Limit:  100,
+	})
+	if err != nil {
+		slog.Error("failed to list automations", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to list automations")
+		return
+	}
+	if automations == nil {
+		automations = []*sdk.AutomationRecord{}
+	}
+	writeJSON(w, http.StatusOK, automations)
+}
+
+func (s *Server) handleCreateAutomation(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Sharing     string `json:"sharing"`
+		TeamID      string `json:"team_id,omitempty"`
+		Trigger     string `json:"trigger"`
+		Nodes       string `json:"nodes"`
+		Edges       string `json:"edges"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	if req.Sharing == "" {
+		req.Sharing = "personal"
+	}
+	if req.Trigger == "" {
+		req.Trigger = "{}"
+	}
+	if req.Nodes == "" {
+		req.Nodes = "[]"
+	}
+	if req.Edges == "" {
+		req.Edges = "[]"
+	}
+
+	now := time.Now()
+	automation := &sdk.AutomationRecord{
+		ID:          uuid.New().String(),
+		Name:        req.Name,
+		Description: req.Description,
+		CreatedBy:   getUserID(r),
+		Sharing:     req.Sharing,
+		TeamID:      req.TeamID,
+		Trigger:     req.Trigger,
+		Nodes:       req.Nodes,
+		Edges:       req.Edges,
+		Enabled:     true,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	if err := s.store.CreateAutomation(r.Context(), automation); err != nil {
+		slog.Error("failed to create automation", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to create automation")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, automation)
+}
+
+func (s *Server) handleGetAutomation(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	automation, err := s.store.GetAutomation(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "automation not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, automation)
+}
+
+func (s *Server) handleUpdateAutomation(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	existing, err := s.store.GetAutomation(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "automation not found")
+		return
+	}
+
+	var req struct {
+		Name        *string `json:"name,omitempty"`
+		Description *string `json:"description,omitempty"`
+		Sharing     *string `json:"sharing,omitempty"`
+		TeamID      *string `json:"team_id,omitempty"`
+		Trigger     *string `json:"trigger,omitempty"`
+		Nodes       *string `json:"nodes,omitempty"`
+		Edges       *string `json:"edges,omitempty"`
+		Enabled     *bool   `json:"enabled,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.Name != nil {
+		existing.Name = *req.Name
+	}
+	if req.Description != nil {
+		existing.Description = *req.Description
+	}
+	if req.Sharing != nil {
+		existing.Sharing = *req.Sharing
+	}
+	if req.TeamID != nil {
+		existing.TeamID = *req.TeamID
+	}
+	if req.Trigger != nil {
+		existing.Trigger = *req.Trigger
+	}
+	if req.Nodes != nil {
+		existing.Nodes = *req.Nodes
+	}
+	if req.Edges != nil {
+		existing.Edges = *req.Edges
+	}
+	if req.Enabled != nil {
+		existing.Enabled = *req.Enabled
+	}
+	existing.UpdatedAt = time.Now()
+
+	if err := s.store.UpdateAutomation(r.Context(), existing); err != nil {
+		slog.Error("failed to update automation", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to update automation")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, existing)
+}
+
+func (s *Server) handleDeleteAutomation(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := s.store.DeleteAutomation(r.Context(), id); err != nil {
+		slog.Error("failed to delete automation", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to delete automation")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Email == "" || req.Password == "" {
+		writeError(w, http.StatusBadRequest, "email and password are required")
+		return
+	}
+
+	user, err := s.store.GetUserByEmail(r.Context(), req.Email)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid email or password")
+		return
+	}
+	if user.Disabled {
+		writeError(w, http.StatusForbidden, "account is disabled")
+		return
+	}
+	if !auth.CheckPassword(user.PasswordHash, req.Password) {
+		writeError(w, http.StatusUnauthorized, "invalid email or password")
+		return
+	}
+
+	token := generateToken()
+
+	slog.Info("user logged in", "user_id", user.ID, "email", user.Email)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"token": token,
+		"user": map[string]any{
+			"id":    user.ID,
+			"name":  user.Name,
+			"email": user.Email,
+			"role":  user.Role,
+		},
+	})
+}
+
+func generateToken() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return uuid.New().String()
+	}
+	return hex.EncodeToString(b)
+}
+
+func (s *Server) handleSetupStatus(w http.ResponseWriter, r *http.Request) {
+	count, err := s.store.CountUsers(r.Context())
+	if err != nil {
+		slog.Error("failed to count users", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to check setup status")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{
+		"setup_required": count == 0,
+	})
+}
+
+func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	count, err := s.store.CountUsers(ctx)
+	if err != nil {
+		slog.Error("failed to count users", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to check user count")
+		return
+	}
+	if count > 0 {
+		writeError(w, http.StatusConflict, "setup already completed — users exist")
+		return
+	}
+
+	setupPassword := os.Getenv("FORGEBOX_FIRST_PASSWORD")
+	if setupPassword == "" {
+		writeError(w, http.StatusServiceUnavailable, "FORGEBOX_FIRST_PASSWORD not set — cannot bootstrap")
+		return
+	}
+
+	var req struct {
+		Name          string `json:"name"`
+		Email         string `json:"email"`
+		Password      string `json:"password"`
+		SetupPassword string `json:"setup_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Name == "" || req.Email == "" || req.Password == "" || req.SetupPassword == "" {
+		writeError(w, http.StatusBadRequest, "name, email, password, and setup_password are required")
+		return
+	}
+
+	if req.SetupPassword != setupPassword {
+		writeError(w, http.StatusForbidden, "invalid setup password")
+		return
+	}
+
+	hash, err := auth.HashPassword(req.Password)
+	if err != nil {
+		slog.Error("failed to hash password", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to create account")
+		return
+	}
+
+	user := &sdk.UserRecord{
+		ID:           uuid.New().String(),
+		Name:         req.Name,
+		Email:        req.Email,
+		PasswordHash: hash,
+		Role:         "admin",
+	}
+
+	if err := s.store.CreateUser(ctx, user); err != nil {
+		slog.Error("failed to create admin user", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to create account")
+		return
+	}
+
+	slog.Info("first admin account created via /api/v1/setup", "user_id", user.ID, "email", user.Email)
+	writeJSON(w, http.StatusCreated, map[string]string{
+		"id":    user.ID,
+		"name":  user.Name,
+		"email": user.Email,
+		"role":  user.Role,
+	})
 }
 
 // --- Middleware ---

@@ -5,14 +5,31 @@
 		name: string;
 		href: string;
 		icon: string;
+		children?: NavItem[];
+	}
+
+	interface NavGroup {
+		label: string;
+		items: NavItem[];
 	}
 
 	interface Props {
-		items: NavItem[];
+		groups: NavGroup[];
 		title?: string;
 	}
 
-	let { items, title = 'ForgeBox' }: Props = $props();
+	let { groups, title = 'ForgeBox' }: Props = $props();
+
+	function isActive(href: string, exact = false): boolean {
+		if (exact) return page.url.pathname === href;
+		return page.url.pathname === href ||
+			(href !== '/' && page.url.pathname.startsWith(href));
+	}
+
+	function isExpanded(item: NavItem): boolean {
+		if (!item.children) return false;
+		return isActive(item.href) || item.children.some((c) => isActive(c.href));
+	}
 </script>
 
 <aside class="sidebar">
@@ -24,17 +41,39 @@
 	</div>
 
 	<nav class="sidebar__nav">
-		{#each items as item}
-			{@const isActive = page.url.pathname === item.href ||
-				(item.href !== '/' && page.url.pathname.startsWith(item.href))}
-			<a
-				href={item.href}
-				class="sidebar__link"
-				class:sidebar__link--active={isActive}
-			>
-				<span class="sidebar__link-icon">{item.icon}</span>
-				{item.name}
-			</a>
+		{#each groups as group}
+			<div class="sidebar__group">
+				<span class="sidebar__group-label">{group.label}</span>
+				{#each group.items as item}
+					<a
+						href={item.href}
+						class="sidebar__link"
+						class:sidebar__link--active={isActive(item.href) && !item.children}
+						class:sidebar__link--expanded={isExpanded(item)}
+					>
+						<span class="sidebar__link-icon">{item.icon}</span>
+						{item.name}
+						{#if item.children}
+							<svg class="sidebar__chevron" class:sidebar__chevron--open={isExpanded(item)} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<polyline points="9 18 15 12 9 6" />
+							</svg>
+						{/if}
+					</a>
+					{#if item.children && isExpanded(item)}
+						<div class="sidebar__sub">
+							{#each item.children as child}
+								<a
+									href={child.href}
+									class="sidebar__sublink"
+									class:sidebar__sublink--active={isActive(child.href, true)}
+								>
+									{child.name}
+								</a>
+							{/each}
+						</div>
+					{/if}
+				{/each}
+			</div>
 		{/each}
 	</nav>
 
@@ -78,9 +117,25 @@
 			padding: $space-4 $space-3;
 			display: flex;
 			flex-direction: column;
-			gap: $space-1;
+			gap: $space-5;
 			@include scrollbar-thin;
 			overflow-y: auto;
+		}
+
+		&__group {
+			display: flex;
+			flex-direction: column;
+			gap: $space-1;
+		}
+
+		&__group-label {
+			font-size: $text-xs;
+			font-weight: $font-semibold;
+			text-transform: uppercase;
+			letter-spacing: 0.05em;
+			color: $neutral-400;
+			padding: 0 $space-3;
+			margin-bottom: $space-1;
 		}
 
 		&__link {
@@ -103,12 +158,90 @@
 				background: $primary-50;
 				color: $primary-700;
 			}
+
+			&--expanded {
+				color: $neutral-900;
+				font-weight: $font-semibold;
+			}
 		}
 
 		&__link-icon {
 			width: 1.25rem;
 			text-align: center;
 			flex-shrink: 0;
+		}
+
+		&__chevron {
+			margin-left: auto;
+			color: $neutral-400;
+			transition: transform $transition-fast;
+
+			&--open {
+				transform: rotate(90deg);
+			}
+		}
+
+		&__sub {
+			display: flex;
+			flex-direction: column;
+			margin-left: calc($space-3 + 0.625rem);
+			padding-left: $space-4;
+			padding-top: $space-1;
+			padding-bottom: $space-1;
+			position: relative;
+
+			&::before {
+				content: '';
+				position: absolute;
+				left: 0;
+				top: 0;
+				bottom: 0;
+				width: 2px;
+				background: $neutral-200;
+				border-radius: 1px;
+			}
+		}
+
+		&__sublink {
+			display: flex;
+			align-items: center;
+			gap: $space-2;
+			padding: 6px $space-3;
+			font-size: $text-xs;
+			font-weight: $font-medium;
+			color: $neutral-500;
+			border-radius: $radius-md;
+			transition: all $transition-fast;
+			position: relative;
+
+			&::before {
+				content: '';
+				width: 5px;
+				height: 5px;
+				border-radius: 50%;
+				background: $neutral-300;
+				flex-shrink: 0;
+				transition: all $transition-fast;
+			}
+
+			&:hover {
+				color: $neutral-800;
+				background: $neutral-50;
+
+				&::before {
+					background: $neutral-500;
+				}
+			}
+
+			&--active {
+				color: $primary-700;
+				background: $primary-50;
+
+				&::before {
+					background: $primary-500;
+					box-shadow: 0 0 0 2px rgba($primary-500, 0.2);
+				}
+			}
 		}
 
 		&__footer {

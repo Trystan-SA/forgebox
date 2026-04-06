@@ -13,6 +13,7 @@ type StoragePlugin interface {
 	SessionStore
 	AuditStore
 	UserStore
+	AutomationStore
 }
 
 // TaskStore manages task persistence.
@@ -42,8 +43,10 @@ type AuditStore interface {
 // UserStore manages user and team data.
 type UserStore interface {
 	GetUser(ctx context.Context, id string) (*UserRecord, error)
+	GetUserByEmail(ctx context.Context, email string) (*UserRecord, error)
 	CreateUser(ctx context.Context, user *UserRecord) error
 	ListUsers(ctx context.Context) ([]*UserRecord, error)
+	CountUsers(ctx context.Context) (int, error)
 }
 
 // TaskRecord represents a stored task.
@@ -123,10 +126,44 @@ type AuditFilter struct {
 
 // UserRecord represents a stored user.
 type UserRecord struct {
-	ID       string   `json:"id"`
-	Name     string   `json:"name"`
-	Email    string   `json:"email"`
-	Role     string   `json:"role"` // "admin", "developer", "operator", "viewer"
-	TeamIDs  []string `json:"team_ids,omitempty"`
-	Disabled bool     `json:"disabled"`
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Email        string   `json:"email"`
+	PasswordHash string   `json:"-"` // never exposed in JSON
+	Role         string   `json:"role"` // "admin", "developer", "operator", "viewer"
+	TeamIDs      []string `json:"team_ids,omitempty"`
+	Disabled     bool     `json:"disabled"`
+}
+
+// AutomationStore manages automation persistence.
+type AutomationStore interface {
+	CreateAutomation(ctx context.Context, automation *AutomationRecord) error
+	GetAutomation(ctx context.Context, id string) (*AutomationRecord, error)
+	UpdateAutomation(ctx context.Context, automation *AutomationRecord) error
+	DeleteAutomation(ctx context.Context, id string) error
+	ListAutomations(ctx context.Context, filter AutomationFilter) ([]*AutomationRecord, error)
+}
+
+// AutomationRecord represents a stored automation workflow.
+type AutomationRecord struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	CreatedBy   string    `json:"created_by"`
+	Sharing     string    `json:"sharing"` // "personal", "team", "org"
+	TeamID      string    `json:"team_id,omitempty"`
+	Trigger     string    `json:"trigger"`   // JSON blob
+	Nodes       string    `json:"nodes"`     // JSON blob (Svelte Flow nodes)
+	Edges       string    `json:"edges"`     // JSON blob (Svelte Flow edges)
+	Enabled     bool      `json:"enabled"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// AutomationFilter specifies criteria for listing automations.
+type AutomationFilter struct {
+	UserID string
+	TeamID string
+	Limit  int
+	Offset int
 }

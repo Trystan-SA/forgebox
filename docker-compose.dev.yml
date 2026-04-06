@@ -16,7 +16,7 @@ services:
       bash -c "
         cd /workspace &&
         go mod tidy &&
-        go run ./cmd/forgebox serve
+        air
       "
     volumes:
       - .:/workspace
@@ -32,6 +32,7 @@ services:
       - FORGEBOX_STORAGE_PATH=/workspace/data/forgebox.db
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - FORGEBOX_FIRST_PASSWORD=${FORGEBOX_FIRST_PASSWORD:-}
     depends_on:
       postgres:
         condition: service_healthy

@@ -7,7 +7,13 @@ import type {
 	CreateTaskRequest,
 	TaskEvent,
 	LoginRequest,
-	LoginResponse
+	LoginResponse,
+	SetupStatusResponse,
+	SetupRequest,
+	SetupResponse,
+	Automation,
+	CreateAutomationRequest,
+	UpdateAutomationRequest
 } from './types';
 import { getBaseUrl } from '$lib/platform';
 
@@ -35,6 +41,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 	}
 
 	return res.json();
+}
+
+// --- Setup ---
+export async function checkSetupStatus(): Promise<SetupStatusResponse> {
+	return request('/setup/status');
+}
+
+export async function setupAccount(req: SetupRequest): Promise<SetupResponse> {
+	return request('/setup', {
+		method: 'POST',
+		body: JSON.stringify(req)
+	});
 }
 
 // --- Auth ---
@@ -120,6 +138,33 @@ export async function listProviders(): Promise<Provider[]> {
 
 export async function listTools(): Promise<ToolSchema[]> {
 	return (await request<ToolSchema[] | null>('/tools')) ?? [];
+}
+
+// --- Automations ---
+export async function listAutomations(): Promise<Automation[]> {
+	return (await request<Automation[] | null>('/automations')) ?? [];
+}
+
+export async function createAutomation(req: CreateAutomationRequest): Promise<Automation> {
+	return request('/automations', {
+		method: 'POST',
+		body: JSON.stringify(req)
+	});
+}
+
+export async function getAutomation(id: string): Promise<Automation> {
+	return request(`/automations/${id}`);
+}
+
+export async function updateAutomation(id: string, req: UpdateAutomationRequest): Promise<Automation> {
+	return request(`/automations/${id}`, {
+		method: 'PUT',
+		body: JSON.stringify(req)
+	});
+}
+
+export async function deleteAutomation(id: string): Promise<{ status: string }> {
+	return request(`/automations/${id}`, { method: 'DELETE' });
 }
 
 // --- Audit ---

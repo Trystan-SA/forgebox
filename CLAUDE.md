@@ -105,6 +105,13 @@ make clean            # Remove build artifacts
 - **Struct initialization:** Use named fields. Never rely on positional initialization.
 - **Concurrency:** Prefer channels over mutexes. Document goroutine ownership.
 
+## Frontend Design System
+
+The web dashboard has a design system documented in `web/DESIGN_SYSTEM.md`. **Always read
+this file before creating or modifying frontend components.** It defines the color palette,
+typography, spacing, component patterns (cards, inputs, buttons, badges), layout conventions,
+and SCSS architecture. All frontend code must follow these guidelines.
+
 ## Important Interfaces
 
 These are the core plugin interfaces in `pkg/sdk/`. Understand them before modifying

@@ -1,9 +1,10 @@
 import adapter from '@sveltejs/adapter-static';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
+	preprocess: vitePreprocess(),
 	onwarn: (warning, handler) => {
-		// Suppress false positives from SCSS nesting with &__
 		if (warning.code === 'css_unused_selector') return;
 		handler(warning);
 	},

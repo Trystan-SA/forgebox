@@ -74,6 +74,18 @@ func cmdServe() {
 	}
 	defer store.Close()
 
+	// Check if this is a fresh install with no users.
+	userCount, err := store.CountUsers(ctx)
+	if err != nil {
+		slog.Warn("failed to count users", "error", err)
+	} else if userCount == 0 {
+		if os.Getenv("FORGEBOX_FIRST_PASSWORD") != "" {
+			slog.Info("no users found — POST /api/v1/setup to create the first admin account")
+		} else {
+			slog.Warn("no users found and FORGEBOX_FIRST_PASSWORD is not set — set it to enable first-time setup")
+		}
+	}
+
 	registry := plugins.NewRegistry()
 	if err := registry.LoadBuiltins(cfg); err != nil {
 		slog.Error("failed to load plugins", "error", err)

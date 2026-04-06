@@ -135,6 +135,44 @@ export interface Workflow {
 	updated_at: string;
 }
 
+export type AutomationSharing = 'personal' | 'team' | 'org';
+
+export interface Automation {
+	id: string;
+	name: string;
+	description: string;
+	created_by: string;
+	sharing: AutomationSharing;
+	team_id?: string;
+	trigger: string;
+	nodes: string;
+	edges: string;
+	enabled: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface CreateAutomationRequest {
+	name: string;
+	description?: string;
+	sharing?: AutomationSharing;
+	team_id?: string;
+	trigger?: string;
+	nodes?: string;
+	edges?: string;
+}
+
+export interface UpdateAutomationRequest {
+	name?: string;
+	description?: string;
+	sharing?: AutomationSharing;
+	team_id?: string;
+	trigger?: string;
+	nodes?: string;
+	edges?: string;
+	enabled?: boolean;
+}
+
 export interface TokenUsage {
 	user_id: string;
 	provider: string;
@@ -153,4 +191,22 @@ export interface LoginRequest {
 export interface LoginResponse {
 	token: string;
 	user: User;
+}
+
+export interface SetupStatusResponse {
+	setup_required: boolean;
+}
+
+export interface SetupRequest {
+	name: string;
+	email: string;
+	password: string;
+	setup_password: string;
+}
+
+export interface SetupResponse {
+	id: string;
+	name: string;
+	email: string;
+	role: string;
 }

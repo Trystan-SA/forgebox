@@ -103,6 +103,7 @@ func (s *Store) migrate() error {
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
 			email TEXT UNIQUE,
+			password_hash TEXT NOT NULL DEFAULT '',
 			role TEXT NOT NULL DEFAULT 'viewer',
 			team_ids TEXT,
 			disabled INTEGER DEFAULT 0
@@ -113,7 +114,34 @@ func (s *Store) migrate() error {
 		CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id);
 		CREATE INDEX IF NOT EXISTS idx_audit_task ON audit_log(task_id);
 	`)
-	return err
+	if err != nil {
+		return err
+	}
+
+	/* Add password_hash column to existing databases that lack it. */
+	s.db.Exec(`ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''`)
+
+	/* Automations table. */
+	s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS automations (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			created_by TEXT NOT NULL,
+			sharing TEXT NOT NULL DEFAULT 'personal',
+			team_id TEXT,
+			trigger_config TEXT NOT NULL DEFAULT '{}',
+			nodes TEXT NOT NULL DEFAULT '[]',
+			edges TEXT NOT NULL DEFAULT '[]',
+			enabled INTEGER DEFAULT 1,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)
+	`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_automations_user ON automations(created_by)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_automations_team ON automations(team_id)`)
+
+	return nil
 }
 
 // --- TaskStore ---
@@ -338,10 +366,21 @@ func (s *Store) ListAuditEntries(ctx context.Context, filter sdk.AuditFilter) ([
 // --- UserStore ---
 
 func (s *Store) GetUser(ctx context.Context, id string) (*sdk.UserRecord, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT id, name, email, role, disabled FROM users WHERE id = ?`, id)
+	row := s.db.QueryRowContext(ctx, `SELECT id, name, email, password_hash, role, disabled FROM users WHERE id = ?`, id)
 	var u sdk.UserRecord
 	var disabled int
-	if err := row.Scan(&u.ID, &u.Name, &u.Email, &u.Role, &disabled); err != nil {
+	if err := row.Scan(&u.ID, &u.Name, &u.Email, &u.PasswordHash, &u.Role, &disabled); err != nil {
+		return nil, err
+	}
+	u.Disabled = disabled != 0
+	return &u, nil
+}
+
+func (s *Store) GetUserByEmail(ctx context.Context, email string) (*sdk.UserRecord, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT id, name, email, password_hash, role, disabled FROM users WHERE email = ?`, email)
+	var u sdk.UserRecord
+	var disabled int
+	if err := row.Scan(&u.ID, &u.Name, &u.Email, &u.PasswordHash, &u.Role, &disabled); err != nil {
 		return nil, err
 	}
 	u.Disabled = disabled != 0
@@ -354,14 +393,14 @@ func (s *Store) CreateUser(ctx context.Context, user *sdk.UserRecord) error {
 		disabled = 1
 	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO users (id, name, email, role, disabled) VALUES (?, ?, ?, ?, ?)`,
-		user.ID, user.Name, user.Email, user.Role, disabled,
+		`INSERT INTO users (id, name, email, password_hash, role, disabled) VALUES (?, ?, ?, ?, ?, ?)`,
+		user.ID, user.Name, user.Email, user.PasswordHash, user.Role, disabled,
 	)
 	return err
 }
 
 func (s *Store) ListUsers(ctx context.Context) ([]*sdk.UserRecord, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, email, role, disabled FROM users ORDER BY name`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, email, password_hash, role, disabled FROM users ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -371,13 +410,125 @@ func (s *Store) ListUsers(ctx context.Context) ([]*sdk.UserRecord, error) {
 	for rows.Next() {
 		var u sdk.UserRecord
 		var disabled int
-		if err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.Role, &disabled); err != nil {
+		if err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.PasswordHash, &u.Role, &disabled); err != nil {
 			return nil, err
 		}
 		u.Disabled = disabled != 0
 		users = append(users, &u)
 	}
 	return users, rows.Err()
+}
+
+func (s *Store) CountUsers(ctx context.Context) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&count)
+	return count, err
+}
+
+// --- AutomationStore ---
+
+func (s *Store) CreateAutomation(ctx context.Context, a *sdk.AutomationRecord) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO automations (id, name, description, created_by, sharing, team_id, trigger_config, nodes, edges, enabled, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.ID, a.Name, a.Description, a.CreatedBy, a.Sharing, a.TeamID,
+		a.Trigger, a.Nodes, a.Edges, boolToInt(a.Enabled),
+		a.CreatedAt.Format(time.RFC3339), a.UpdatedAt.Format(time.RFC3339),
+	)
+	return err
+}
+
+func (s *Store) GetAutomation(ctx context.Context, id string) (*sdk.AutomationRecord, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, name, description, created_by, sharing, team_id, trigger_config, nodes, edges, enabled, created_at, updated_at
+		 FROM automations WHERE id = ?`, id)
+	return scanAutomation(row)
+}
+
+func (s *Store) UpdateAutomation(ctx context.Context, a *sdk.AutomationRecord) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE automations SET name=?, description=?, sharing=?, team_id=?, trigger_config=?, nodes=?, edges=?, enabled=?, updated_at=?
+		 WHERE id=?`,
+		a.Name, a.Description, a.Sharing, a.TeamID,
+		a.Trigger, a.Nodes, a.Edges, boolToInt(a.Enabled),
+		a.UpdatedAt.Format(time.RFC3339), a.ID,
+	)
+	return err
+}
+
+func (s *Store) DeleteAutomation(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM automations WHERE id = ?`, id)
+	return err
+}
+
+func (s *Store) ListAutomations(ctx context.Context, filter sdk.AutomationFilter) ([]*sdk.AutomationRecord, error) {
+	query := `SELECT id, name, description, created_by, sharing, team_id, trigger_config, nodes, edges, enabled, created_at, updated_at FROM automations WHERE 1=1`
+	args := []any{}
+	if filter.UserID != "" {
+		query += ` AND (created_by = ? OR sharing = 'org' OR (sharing = 'team' AND team_id IN (SELECT team_ids FROM users WHERE id = ?)))`
+		args = append(args, filter.UserID, filter.UserID)
+	}
+	query += " ORDER BY updated_at DESC"
+	if filter.Limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d", filter.Limit)
+	}
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var automations []*sdk.AutomationRecord
+	for rows.Next() {
+		a, err := scanAutomationRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		automations = append(automations, a)
+	}
+	return automations, rows.Err()
+}
+
+func scanAutomation(row *sql.Row) (*sdk.AutomationRecord, error) {
+	var a sdk.AutomationRecord
+	var enabled int
+	var createdAt, updatedAt string
+	var teamID sql.NullString
+	err := row.Scan(&a.ID, &a.Name, &a.Description, &a.CreatedBy, &a.Sharing, &teamID,
+		&a.Trigger, &a.Nodes, &a.Edges, &enabled, &createdAt, &updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	a.TeamID = teamID.String
+	a.Enabled = enabled != 0
+	a.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	a.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	return &a, nil
+}
+
+func scanAutomationRow(rows *sql.Rows) (*sdk.AutomationRecord, error) {
+	var a sdk.AutomationRecord
+	var enabled int
+	var createdAt, updatedAt string
+	var teamID sql.NullString
+	err := rows.Scan(&a.ID, &a.Name, &a.Description, &a.CreatedBy, &a.Sharing, &teamID,
+		&a.Trigger, &a.Nodes, &a.Edges, &enabled, &createdAt, &updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	a.TeamID = teamID.String
+	a.Enabled = enabled != 0
+	a.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	a.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	return &a, nil
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 func timePtr(t *time.Time) any {

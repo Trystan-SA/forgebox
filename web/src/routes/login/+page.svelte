@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { auth, isAuthenticated, isAdmin } from '$lib/stores/auth';
+	import { auth, isAuthenticated } from '$lib/stores/auth';
 	import { goto } from '$app/navigation';
 
 	let email = $state('');
@@ -9,7 +9,7 @@
 
 	$effect(() => {
 		if ($isAuthenticated) {
-			goto($isAdmin ? '/dashboard' : '/home');
+			goto('/dashboard');
 		}
 	});
 

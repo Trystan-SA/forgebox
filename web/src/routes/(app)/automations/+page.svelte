@@ -1,0 +1,179 @@
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import { listAutomations, deleteAutomation } from '$lib/api/client';
+	import type { Automation } from '$lib/api/types';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import { formatDistanceToNow } from 'date-fns';
+
+	let automations = $state<Automation[]>([]);
+	let loading = $state(true);
+	let error = $state<string | null>(null);
+
+	onMount(async () => {
+		try {
+			automations = await listAutomations();
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to load';
+		} finally {
+			loading = false;
+		}
+	});
+
+	async function handleDelete(id: string) {
+		if (!confirm('Delete this automation?')) return;
+		try {
+			await deleteAutomation(id);
+			automations = automations.filter((a) => a.id !== id);
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Delete failed');
+		}
+	}
+
+	function sharingLabel(s: string) {
+		if (s === 'org') return 'Organization';
+		if (s === 'team') return 'Team';
+		return 'Personal';
+	}
+</script>
+
+<div class="page">
+	<div class="page__header">
+		<div>
+			<h1>Automations</h1>
+			<p>Build visual workflows to automate AI tasks</p>
+		</div>
+		<a href="/automations/new" class="btn-primary">New Automation</a>
+	</div>
+
+	{#if loading}
+		<p class="page__loading">Loading...</p>
+	{:else if error}
+		<p class="page__error">Error: {error}</p>
+	{:else if automations.length === 0}
+		<EmptyState
+			title="No automations yet"
+			description="Create your first automation to chain AI tasks together visually."
+		>
+			<a href="/automations/new" class="btn-primary">Create Automation</a>
+		</EmptyState>
+	{:else}
+		<div class="grid">
+			{#each automations as automation}
+				<a href="/automations/{automation.id}" class="card">
+					<div class="card__top">
+						<div class="card__title-row">
+							<h3 class="card__name">{automation.name}</h3>
+							<span class="card__badge card__badge--{automation.sharing}">{sharingLabel(automation.sharing)}</span>
+						</div>
+						{#if automation.description}
+							<p class="card__desc">{automation.description}</p>
+						{/if}
+					</div>
+					<div class="card__bottom">
+						<span class="card__meta">
+							{automation.enabled ? '🟢 Active' : '⏸ Disabled'}
+						</span>
+						<span class="card__meta">
+							Updated {formatDistanceToNow(new Date(automation.updated_at))} ago
+						</span>
+						<button
+							class="card__delete"
+							onclick={(e) => { e.stopPropagation(); handleDelete(automation.id); }}
+						>
+							Delete
+						</button>
+					</div>
+				</a>
+			{/each}
+		</div>
+	{/if}
+</div>
+
+<style lang="scss">
+	.page {
+		&__header {
+			@include flex-between;
+			margin-bottom: $space-8;
+
+			h1 { font-size: $text-2xl; font-weight: $font-bold; color: $neutral-900; }
+			p { margin-top: $space-1; font-size: $text-sm; color: $neutral-500; }
+		}
+
+		&__loading { color: $neutral-500; }
+		&__error { color: $error-600; }
+	}
+
+	.grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+		gap: $space-4;
+	}
+
+	.card {
+		@include card;
+		padding: $space-5;
+		display: flex;
+		flex-direction: column;
+		justify-content: space-between;
+		gap: $space-4;
+		transition: border-color $transition-fast;
+		text-decoration: none;
+
+		&:hover { border-color: $primary-300; }
+
+		&__top { display: flex; flex-direction: column; gap: $space-2; }
+
+		&__title-row {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: $space-2;
+		}
+
+		&__name {
+			font-size: $text-base;
+			font-weight: $font-semibold;
+			color: $neutral-900;
+		}
+
+		&__desc {
+			font-size: $text-sm;
+			color: $neutral-500;
+			line-height: $leading-relaxed;
+		}
+
+		&__badge {
+			@include badge;
+			&--personal { background: $neutral-100; color: $neutral-600; }
+			&--team { background: $info-50; color: $info-600; }
+			&--org { background: $primary-50; color: $primary-700; }
+		}
+
+		&__bottom {
+			display: flex;
+			align-items: center;
+			gap: $space-3;
+			border-top: 1px solid $neutral-100;
+			padding-top: $space-3;
+		}
+
+		&__meta {
+			font-size: $text-xs;
+			color: $neutral-400;
+		}
+
+		&__delete {
+			margin-left: auto;
+			font-size: $text-xs;
+			color: $neutral-400;
+			background: none;
+			border: none;
+			cursor: pointer;
+			padding: $space-1 $space-2;
+			border-radius: $radius-md;
+			transition: all $transition-fast;
+
+			&:hover { color: $error-600; background: $error-50; }
+		}
+	}
+</style>

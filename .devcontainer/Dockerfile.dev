@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/go:1.23-bookworm
+FROM mcr.microsoft.com/devcontainers/go:1.24-bookworm
 
 # Remove stale Yarn repo from base image, then install Node.js 22 via NodeSource
 RUN rm -f /etc/apt/sources.list.d/yarn.list \
@@ -34,7 +34,7 @@ RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest \
     && go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 
 # Install air (Go hot-reload)
-RUN go install github.com/air-verse/air@latest
+RUN go install github.com/air-verse/air@v1.61.7
 
 # Install golangci-lint
 RUN go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest

@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"time"
 
 	atools "github.com/forgebox/forgebox/internal/agent/tools"

@@ -50,5 +50,10 @@ __debug_bin*
 # Air hot-reload temp
 tmp/
 
+# Runtime data
+data/
+
 # Web frontend
 web/node_modules/
+web/.svelte-kit/
+web/build/

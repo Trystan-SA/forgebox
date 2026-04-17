@@ -14,13 +14,31 @@ import (
 // the format a human authors or reviews; the gateway is authoritative for how
 // it maps to and from stored fields.
 type automationDoc struct {
-	Name        string                   `yaml:"name"`
-	Description string                   `yaml:"description,omitempty"`
-	Sharing     string                   `yaml:"sharing"`
-	Enabled     bool                     `yaml:"enabled"`
-	Trigger     map[string]any           `yaml:"trigger,omitempty"`
-	Nodes       []map[string]any         `yaml:"nodes"`
-	Edges       []map[string]any         `yaml:"edges"`
+	Name        string         `yaml:"name"`
+	Description string         `yaml:"description,omitempty"`
+	Sharing     string         `yaml:"sharing"`
+	Enabled     bool           `yaml:"enabled"`
+	Trigger     map[string]any `yaml:"trigger,omitempty"`
+	Nodes       []nodeOut      `yaml:"nodes"`
+	Edges       []edgeOut      `yaml:"edges"`
+}
+
+// nodeOut serializes a canvas node to YAML. Position is emitted as a flow-style
+// [x, y] sequence (not {x: _, y: _}) because yaml.v3 double-quotes the key
+// "y" for YAML 1.1 boolean compatibility (y/n/yes/no/on/off are booleans in
+// 1.1), which hurts readability.
+type nodeOut struct {
+	ID       string         `yaml:"id"`
+	Type     string         `yaml:"type"`
+	Position []int          `yaml:"position,flow,omitempty"`
+	Data     map[string]any `yaml:"data,omitempty"`
+}
+
+type edgeOut struct {
+	From         string `yaml:"from"`
+	To           string `yaml:"to"`
+	SourceHandle string `yaml:"sourceHandle,omitempty"`
+	TargetHandle string `yaml:"targetHandle,omitempty"`
 }
 
 type flowNode struct {
@@ -43,8 +61,8 @@ func automationToYAML(a *sdk.AutomationRecord) ([]byte, error) {
 		Description: a.Description,
 		Sharing:     a.Sharing,
 		Enabled:     a.Enabled,
-		Nodes:       []map[string]any{},
-		Edges:       []map[string]any{},
+		Nodes:       []nodeOut{},
+		Edges:       []edgeOut{},
 	}
 
 	nodes, err := parseNodes(a.Nodes)
@@ -60,17 +78,12 @@ func automationToYAML(a *sdk.AutomationRecord) ([]byte, error) {
 	}
 
 	for _, n := range nodes {
-		entry := map[string]any{
-			"id":   n.ID,
-			"type": n.Type,
-		}
-		if n.Position != nil {
-			entry["position"] = n.Position
-		}
-		if len(n.Data) > 0 {
-			entry["data"] = n.Data
-		}
-		doc.Nodes = append(doc.Nodes, entry)
+		doc.Nodes = append(doc.Nodes, nodeOut{
+			ID:       n.ID,
+			Type:     n.Type,
+			Position: positionXY(n.Position),
+			Data:     n.Data,
+		})
 	}
 
 	edges, err := parseEdges(a.Edges)
@@ -78,17 +91,12 @@ func automationToYAML(a *sdk.AutomationRecord) ([]byte, error) {
 		return nil, fmt.Errorf("parse edges: %w", err)
 	}
 	for _, e := range edges {
-		entry := map[string]any{
-			"from": e.Source,
-			"to":   e.Target,
-		}
-		if e.SourceHandle != "" {
-			entry["sourceHandle"] = e.SourceHandle
-		}
-		if e.TargetHandle != "" {
-			entry["targetHandle"] = e.TargetHandle
-		}
-		doc.Edges = append(doc.Edges, entry)
+		doc.Edges = append(doc.Edges, edgeOut{
+			From:         e.Source,
+			To:           e.Target,
+			SourceHandle: e.SourceHandle,
+			TargetHandle: e.TargetHandle,
+		})
 	}
 
 	var buf bytes.Buffer
@@ -123,6 +131,32 @@ func parseEdges(raw string) ([]flowEdge, error) {
 		return nil, err
 	}
 	return edges, nil
+}
+
+func positionXY(p map[string]any) []int {
+	if p == nil {
+		return nil
+	}
+	x, okX := toFloat(p["x"])
+	y, okY := toFloat(p["y"])
+	if !okX && !okY {
+		return nil
+	}
+	return []int{int(x), int(y)}
+}
+
+func toFloat(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	}
+	return 0, false
 }
 
 func triggerFromNode(n flowNode) map[string]any {

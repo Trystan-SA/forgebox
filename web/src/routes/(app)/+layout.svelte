@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import Sidebar from '$lib/components/Sidebar.svelte';
-	import TopBar from '$lib/components/TopBar.svelte';
 	import Toasts from '$lib/components/Toasts.svelte';
 	import type { Snippet } from 'svelte';
 
@@ -47,7 +46,7 @@
 		{
 			label: 'Administration',
 			items: [
-				{ name: 'Users & Teams', href: '/users', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z' },
+				{ name: 'Team', href: '/users', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z' },
 				{ name: 'Providers', href: '/providers', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
 				{ name: 'Channels', href: '/channels', icon: 'M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.858 15.355-5.858 21.213 0' },
 				{ name: 'VM Settings', href: '/vm-settings', icon: 'M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01' },
@@ -68,9 +67,6 @@
 <div class="layout">
 	<Sidebar groups={navGroups} bind:collapsed={sidebarCollapsed} />
 	<div class="layout__main">
-		{#if !isFullscreen}
-			<TopBar />
-		{/if}
 		<main class="layout__content" class:layout__content--fullscreen={isFullscreen}>
 			{@render children()}
 		</main>

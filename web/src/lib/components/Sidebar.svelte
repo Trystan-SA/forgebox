@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
+	import { auth, currentUser } from '$lib/stores/auth';
 
 	interface NavItem {
 		name: string;
@@ -30,6 +32,20 @@
 	function isExpanded(item: NavItem): boolean {
 		if (!item.children) return false;
 		return isActive(item.href) || item.children.some((c) => isActive(c.href));
+	}
+
+	function handleLogout() {
+		auth.logout();
+		goto('/login');
+	}
+
+	function initials(value: string): string {
+		return value
+			.split(/[\s@.]+/)
+			.filter(Boolean)
+			.slice(0, 2)
+			.map((p) => p[0]?.toUpperCase() ?? '')
+			.join('') || '?';
 	}
 </script>
 
@@ -100,11 +116,32 @@
 	</nav>
 
 	<div class="sb__foot">
-		<span class="sb__pulse"></span>
-		{#if !collapsed}
-			<span class="sb__foot-text">Connected</span>
-			<span class="sb__foot-ver">v0.1.0</span>
+		{#if $currentUser}
+			<div class="sb__acct">
+				<span class="sb__acct-avatar">{initials($currentUser.name || $currentUser.email)}</span>
+				{#if !collapsed}
+					<div class="sb__acct-info">
+						<span class="sb__acct-name">{$currentUser.name || $currentUser.email.split('@')[0]}</span>
+						<span class="sb__acct-email">{$currentUser.email}</span>
+					</div>
+					<button class="sb__logout" type="button" onclick={handleLogout} aria-label="Sign out">
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
+					</button>
+				{:else}
+					<button class="sb__logout sb__logout--mini" type="button" onclick={handleLogout} aria-label="Sign out">
+						<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
+						<span class="sb__tip">Sign out</span>
+					</button>
+				{/if}
+			</div>
 		{/if}
+		<div class="sb__status">
+			<span class="sb__pulse"></span>
+			{#if !collapsed}
+				<span class="sb__foot-text">Connected</span>
+				<span class="sb__foot-ver">v0.1.0</span>
+			{/if}
+		</div>
 	</div>
 </aside>
 
@@ -397,14 +434,105 @@
 
 		&__foot {
 			display: flex;
-			align-items: center;
-			gap: $space-2;
-			padding: $space-3;
+			flex-direction: column;
+			gap: 2px;
+			padding: $space-2;
 			border-top: 1px solid $sb-border;
 			flex-shrink: 0;
 
 			.sb--c & {
+				align-items: center;
+				padding: $space-2;
+			}
+		}
+
+		&__status {
+			display: flex;
+			align-items: center;
+			gap: $space-2;
+			padding: 4px $space-2 2px;
+			opacity: 0.7;
+
+			.sb--c & {
 				justify-content: center;
+				padding: 4px 0 2px;
+			}
+		}
+
+		&__acct {
+			display: flex;
+			align-items: center;
+			gap: $space-2;
+			width: 100%;
+			padding: 6px $space-1;
+			border-radius: $radius-lg;
+			min-width: 0;
+
+			.sb--c & {
+				padding: 0;
+				justify-content: center;
+			}
+		}
+
+		&__acct-avatar {
+			@include flex-center;
+			width: 28px;
+			height: 28px;
+			flex-shrink: 0;
+			border-radius: 999px;
+			background: rgba($primary-400, 0.18);
+			color: $primary-300;
+			font-size: 11px;
+			font-weight: $font-semibold;
+			letter-spacing: 0.02em;
+			border: 1px solid rgba($primary-400, 0.25);
+		}
+
+		&__acct-info {
+			flex: 1;
+			min-width: 0;
+			display: flex;
+			flex-direction: column;
+			gap: 1px;
+			line-height: 1.1;
+		}
+
+		&__acct-name {
+			font-size: $text-xs;
+			font-weight: $font-semibold;
+			color: $sb-bright;
+			@include truncate;
+		}
+
+		&__acct-email {
+			font-family: $font-mono;
+			font-size: 10px;
+			color: $sb-text;
+			opacity: 0.7;
+			@include truncate;
+		}
+
+		&__logout {
+			@include flex-center;
+			width: 26px;
+			height: 26px;
+			flex-shrink: 0;
+			border: none;
+			background: transparent;
+			border-radius: $radius-md;
+			color: $sb-text;
+			opacity: 0.55;
+			cursor: pointer;
+			transition: color $transition-fast, background $transition-fast, opacity $transition-fast;
+
+			&:hover {
+				opacity: 1;
+				color: $error-500;
+				background: rgba($error-500, 0.08);
+			}
+
+			&--mini {
+				position: relative;
 			}
 		}
 

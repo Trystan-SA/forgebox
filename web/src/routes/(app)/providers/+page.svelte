@@ -25,7 +25,7 @@
 			<h1>Providers</h1>
 			<p>Configure LLM providers</p>
 		</div>
-		<button class="btn-secondary">Add Provider</button>
+		<a href="/providers/new" class="btn-secondary">Add Provider</a>
 	</div>
 
 	{#if loading}
@@ -36,7 +36,11 @@
 		<EmptyState
 			title="No providers configured"
 			description="Add an LLM provider to get started."
-		/>
+		>
+			{#snippet action()}
+				<a href="/providers/new" class="btn-primary">Add Provider</a>
+			{/snippet}
+		</EmptyState>
 	{:else}
 		<div class="grid">
 			{#each providers as provider}

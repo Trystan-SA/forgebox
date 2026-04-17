@@ -34,7 +34,9 @@
 	.empty {
 		@include flex-center;
 		flex-direction: column;
-		padding: $space-16 $space-4;
+		max-width: 420px;
+		margin: 0 auto;
+		padding: $space-16 $space-6;
 		text-align: center;
 		border: 2px dashed $neutral-200;
 		border-radius: $radius-xl;

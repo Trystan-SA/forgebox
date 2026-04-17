@@ -8,6 +8,8 @@ Open-source AI automation platform. Runs AI-generated tasks inside Firecracker
 microVMs so non-technical users in organizations can safely trigger AI automation
 without risk to host infrastructure.
 
+![Automation editor — canvas with triggers, AI step, tool, and switch nodes](docs/images/automation-editor.png)
+
 ## Why ForgeBox
 
 - **Safe by default**, every LLM-invoked tool runs inside an isolated Firecracker

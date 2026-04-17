@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
+	import Toasts from '$lib/components/Toasts.svelte';
 	import type { Snippet } from 'svelte';
 
 	interface Props {
@@ -75,6 +76,8 @@
 		</main>
 	</div>
 </div>
+
+<Toasts />
 
 <style lang="scss">
 	.layout {

@@ -2,7 +2,8 @@
 	import { onMount, tick } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { getAutomation, updateAutomation, getAutomationYaml } from '$lib/api/client';
+	import { getAutomation, getAutomationYaml } from '$lib/api/client';
+	import { saveAutomationGraph, saveAutomationMeta } from '$lib/api/automations';
 	import type { Automation } from '$lib/api/types';
 	import {
 		SvelteFlow,
@@ -27,6 +28,7 @@
 	import NodeConfigPanel from '$lib/components/nodes/NodeConfigPanel.svelte';
 	import NodeContextMenu from '$lib/components/nodes/NodeContextMenu.svelte';
 	import YamlPreviewModal from '$lib/components/YamlPreviewModal.svelte';
+	import AutomationMetaEditor from '$lib/components/AutomationMetaEditor.svelte';
 
 	const nodeTypes: NodeTypes = {
 		trigger: TriggerNode,
@@ -287,17 +289,21 @@
 	}
 
 	async function handleSave() {
-		if (!automation) return;
+		if (!automation || saving) return;
 		saving = true;
-		try {
-			await updateAutomation(automation.id, {
-				nodes: JSON.stringify(nodes),
-				edges: JSON.stringify(edges)
-			});
-		} catch (err) {
-			alert(err instanceof Error ? err.message : 'Save failed');
-		} finally {
-			saving = false;
+		const updated = await saveAutomationGraph(automation.id, nodes, edges);
+		if (updated) automation = updated;
+		saving = false;
+	}
+
+	let metaOpen = $state(false);
+
+	async function handleMetaSave(patch: { name: string; description: string }) {
+		if (!automation) return;
+		const updated = await saveAutomationMeta(automation.id, patch);
+		if (updated) {
+			automation = updated;
+			metaOpen = false;
 		}
 	}
 
@@ -333,6 +339,11 @@
 					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6" /></svg>
 				</a>
 				<h2 class="editor__title">{automation.name}</h2>
+				<button class="editor__edit" onclick={() => { metaOpen = true; }} title="Edit name and description" aria-label="Edit automation details">
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
+					</svg>
+				</button>
 			</div>
 			<div class="editor__right">
 				<button class="btn-secondary editor__yaml" onclick={openYamlPreview} title="Preview automation as YAML">
@@ -521,6 +532,14 @@
 			footer="Reflects the last saved state. Save first to include unsaved changes."
 			onclose={() => { yamlOpen = false; }}
 		/>
+
+		<AutomationMetaEditor
+			open={metaOpen}
+			name={automation.name}
+			description={automation.description}
+			onsave={handleMetaSave}
+			onclose={() => { metaOpen = false; }}
+		/>
 	</div>
 {/if}
 
@@ -570,6 +589,22 @@
 			font-size: $text-base;
 			font-weight: $font-semibold;
 			color: $neutral-900;
+		}
+
+		&__edit {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			width: 26px;
+			height: 26px;
+			border: none;
+			background: none;
+			border-radius: $radius-lg;
+			color: $neutral-400;
+			cursor: pointer;
+			transition: all $transition-fast;
+
+			&:hover { background: $neutral-100; color: $primary-600; }
 		}
 
 		&__right {

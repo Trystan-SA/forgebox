@@ -36,7 +36,7 @@
 			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6" /></svg>
 			Back
 		</a>
-		<h1>New Automation</h1>
+		<h1>New Workflow</h1>
 		<p>Set up the basics, then build your workflow visually.</p>
 	</div>
 
@@ -53,7 +53,7 @@
 
 			<label class="field">
 				<span>Description</span>
-				<textarea bind:value={description} placeholder="What does this automation do?" rows="3" disabled={loading}></textarea>
+				<textarea bind:value={description} placeholder="What does this workflow do?" rows="3" disabled={loading}></textarea>
 			</label>
 
 			<fieldset class="sharing">

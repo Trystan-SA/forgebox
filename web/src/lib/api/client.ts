@@ -13,7 +13,12 @@ import type {
 	SetupResponse,
 	Automation,
 	CreateAutomationRequest,
-	UpdateAutomationRequest
+	UpdateAutomationRequest,
+	Agent,
+	CreateAgentRequest,
+	App,
+	CreateAppRequest,
+	UpdateAppRequest
 } from './types';
 import { getBaseUrl } from '$lib/platform';
 
@@ -156,6 +161,21 @@ export async function getAutomation(id: string): Promise<Automation> {
 	return request(`/automations/${id}`);
 }
 
+export async function getAutomationYaml(id: string): Promise<string> {
+	const base = getBaseUrl();
+	const token = getToken();
+	const res = await fetch(`${base}/automations/${id}/yaml`, {
+		headers: {
+			...(token ? { Authorization: `Bearer ${token}` } : {})
+		}
+	});
+	if (!res.ok) {
+		const body = await res.json().catch(() => ({}));
+		throw new Error(body.error || `HTTP ${res.status}`);
+	}
+	return res.text();
+}
+
 export async function updateAutomation(id: string, req: UpdateAutomationRequest): Promise<Automation> {
 	return request(`/automations/${id}`, {
 		method: 'PUT',
@@ -165,6 +185,53 @@ export async function updateAutomation(id: string, req: UpdateAutomationRequest)
 
 export async function deleteAutomation(id: string): Promise<{ status: string }> {
 	return request(`/automations/${id}`, { method: 'DELETE' });
+}
+
+// --- Agents ---
+export async function listAgents(): Promise<Agent[]> {
+	return (await request<Agent[] | null>('/agents')) ?? [];
+}
+
+export async function createAgent(req: CreateAgentRequest): Promise<Agent> {
+	return request('/agents', {
+		method: 'POST',
+		body: JSON.stringify(req)
+	});
+}
+
+export async function getAgent(id: string): Promise<Agent> {
+	return request(`/agents/${id}`);
+}
+
+export async function deleteAgent(id: string): Promise<{ status: string }> {
+	return request(`/agents/${id}`, { method: 'DELETE' });
+}
+
+// --- Apps ---
+export async function listApps(): Promise<App[]> {
+	return (await request<App[] | null>('/apps')) ?? [];
+}
+
+export async function createApp(req: CreateAppRequest): Promise<App> {
+	return request('/apps', {
+		method: 'POST',
+		body: JSON.stringify(req)
+	});
+}
+
+export async function getApp(id: string): Promise<App> {
+	return request(`/apps/${id}`);
+}
+
+export async function updateApp(id: string, req: UpdateAppRequest): Promise<App> {
+	return request(`/apps/${id}`, {
+		method: 'PUT',
+		body: JSON.stringify(req)
+	});
+}
+
+export async function deleteApp(id: string): Promise<{ status: string }> {
+	return request(`/apps/${id}`, { method: 'DELETE' });
 }
 
 // --- Audit ---

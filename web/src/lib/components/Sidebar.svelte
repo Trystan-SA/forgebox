@@ -16,9 +16,10 @@
 	interface Props {
 		groups: NavGroup[];
 		title?: string;
+		collapsed?: boolean;
 	}
 
-	let { groups, title = 'ForgeBox' }: Props = $props();
+	let { groups, title = 'ForgeBox', collapsed = $bindable(false) }: Props = $props();
 
 	function isActive(href: string, exact = false): boolean {
 		if (exact) return page.url.pathname === href;
@@ -32,42 +33,63 @@
 	}
 </script>
 
-<aside class="sidebar">
-	<div class="sidebar__logo">
-		<svg class="sidebar__icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-			<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-		</svg>
-		<span class="sidebar__title">{title}</span>
+<aside class="sb" class:sb--c={collapsed}>
+	<div class="sb__head">
+		<a href="/dashboard" class="sb__brand">
+			<div class="sb__logo">
+				<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+				</svg>
+			</div>
+			{#if !collapsed}
+				<span class="sb__brand-name">{title}</span>
+			{/if}
+		</a>
+		<button class="sb__toggle" onclick={() => { collapsed = !collapsed; }} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				{#if collapsed}
+					<polyline points="9 18 15 12 9 6" />
+				{:else}
+					<polyline points="15 18 9 12 15 6" />
+				{/if}
+			</svg>
+		</button>
 	</div>
 
-	<nav class="sidebar__nav">
+	<nav class="sb__nav">
 		{#each groups as group}
-			<div class="sidebar__group">
-				<span class="sidebar__group-label">{group.label}</span>
+			<div class="sb__group">
+				{#if !collapsed}
+					<span class="sb__group-label">{group.label}</span>
+				{:else}
+					<span class="sb__divider"></span>
+				{/if}
 				{#each group.items as item}
 					<a
 						href={item.href}
-						class="sidebar__link"
-						class:sidebar__link--active={isActive(item.href) && !item.children}
-						class:sidebar__link--expanded={isExpanded(item)}
+						class="sb__link"
+						class:sb__link--active={isActive(item.href) && !item.children}
+						class:sb__link--parent={isExpanded(item)}
 					>
-						<span class="sidebar__link-icon">{item.icon}</span>
-						{item.name}
-						{#if item.children}
-							<svg class="sidebar__chevron" class:sidebar__chevron--open={isExpanded(item)} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<polyline points="9 18 15 12 9 6" />
-							</svg>
+						<span class="sb__link-icon">
+							<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d={item.icon} /></svg>
+						</span>
+						{#if !collapsed}
+							<span class="sb__link-name">{item.name}</span>
+							{#if item.children}
+								<svg class="sb__chevron" class:sb__chevron--open={isExpanded(item)} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6" /></svg>
+							{/if}
+						{/if}
+						{#if collapsed}
+							<span class="sb__tip">{item.name}</span>
 						{/if}
 					</a>
-					{#if item.children && isExpanded(item)}
-						<div class="sidebar__sub">
+					{#if !collapsed && item.children && isExpanded(item)}
+						<div class="sb__sub">
 							{#each item.children as child}
-								<a
-									href={child.href}
-									class="sidebar__sublink"
-									class:sidebar__sublink--active={isActive(child.href, true)}
-								>
-									{child.name}
+								<a href={child.href} class="sb__sub-link" class:sb__sub-link--active={isActive(child.href, true)}>
+									<span class="sb__sub-dot"></span>
+									<span>{child.name}</span>
 								</a>
 							{/each}
 						</div>
@@ -77,197 +99,335 @@
 		{/each}
 	</nav>
 
-	<div class="sidebar__footer">
-		<div class="sidebar__status">
-			<span class="sidebar__dot"></span>
-			<span>Gateway connected</span>
-		</div>
-		<p class="sidebar__version">ForgeBox v0.1.0</p>
+	<div class="sb__foot">
+		<span class="sb__pulse"></span>
+		{#if !collapsed}
+			<span class="sb__foot-text">Connected</span>
+			<span class="sb__foot-ver">v0.1.0</span>
+		{/if}
 	</div>
 </aside>
 
 <style lang="scss">
-	.sidebar {
+	$sb-expanded: $sidebar-width;
+	$sb-collapsed: 52px;
+	$sb-bg: $neutral-900;
+	$sb-hover: rgba(255, 255, 255, 0.06);
+	$sb-active: rgba($primary-400, 0.12);
+	$sb-border: rgba(255, 255, 255, 0.07);
+	$sb-text: $neutral-400;
+	$sb-bright: $neutral-100;
+	$sb-accent: $primary-400;
+	$sb-ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+	.sb {
 		display: flex;
 		flex-direction: column;
-		width: $sidebar-width;
-		border-right: 1px solid $neutral-200;
-		background: $neutral-0;
+		width: $sb-expanded;
 		height: 100%;
+		background: $sb-bg;
+		overflow: hidden;
+		transition: width 0.22s $sb-ease;
+		flex-shrink: 0;
 
-		&__logo {
+		&--c {
+			width: $sb-collapsed;
+		}
+
+		&__head {
+			display: flex;
+			align-items: center;
+			height: $topbar-height;
+			padding: 0 $space-2;
+			flex-shrink: 0;
+			border-bottom: 1px solid $sb-border;
+			gap: $space-1;
+
+			.sb--c & {
+				flex-direction: column;
+				height: auto;
+				padding: $space-2;
+				gap: $space-2;
+			}
+		}
+
+		&__brand {
 			display: flex;
 			align-items: center;
 			gap: $space-2;
-			height: $topbar-height;
-			padding: 0 $space-6;
-			border-bottom: 1px solid $neutral-200;
+			color: $sb-bright;
+			text-decoration: none;
+			flex: 1;
+			min-width: 0;
+			padding: 0 $space-1;
+
+			.sb--c & {
+				flex: 0;
+				padding: 0;
+			}
 		}
 
-		&__icon { color: $primary-600; }
+		&__logo {
+			@include flex-center;
+			width: 32px;
+			height: 32px;
+			flex-shrink: 0;
+			color: $sb-accent;
+		}
 
-		&__title {
-			font-size: $text-lg;
+		&__brand-name {
+			font-size: $text-sm;
 			font-weight: $font-bold;
-			color: $neutral-900;
+			letter-spacing: 0.03em;
+			white-space: nowrap;
+			@include truncate;
+		}
+
+		&__toggle {
+			@include flex-center;
+			width: 28px;
+			height: 28px;
+			flex-shrink: 0;
+			border: none;
+			background: transparent;
+			border-radius: $radius-md;
+			color: $sb-text;
+			cursor: pointer;
+			transition: color $transition-fast, background $transition-fast;
+
+			&:hover {
+				background: $sb-hover;
+				color: $sb-bright;
+			}
+
+			.sb--c & {
+				width: 36px;
+				height: 28px;
+				border: 1px solid $sb-border;
+				border-radius: $radius-lg;
+
+				&:hover {
+					border-color: rgba(255, 255, 255, 0.15);
+				}
+			}
 		}
 
 		&__nav {
 			flex: 1;
-			padding: $space-4 $space-3;
+			padding: $space-2;
 			display: flex;
 			flex-direction: column;
-			gap: $space-5;
-			@include scrollbar-thin;
+			gap: $space-3;
 			overflow-y: auto;
+			scrollbar-width: thin;
+			scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
 		}
 
 		&__group {
 			display: flex;
 			flex-direction: column;
-			gap: $space-1;
+			gap: 1px;
 		}
 
 		&__group-label {
-			font-size: $text-xs;
+			font-family: $font-mono;
+			font-size: 10px;
 			font-weight: $font-semibold;
 			text-transform: uppercase;
-			letter-spacing: 0.05em;
-			color: $neutral-400;
-			padding: 0 $space-3;
-			margin-bottom: $space-1;
+			letter-spacing: 0.08em;
+			color: $sb-text;
+			opacity: 0.45;
+			padding: $space-1 $space-2;
+			margin-bottom: 2px;
+			white-space: nowrap;
+		}
+
+		&__divider {
+			display: block;
+			height: 1px;
+			background: $sb-border;
+			margin: $space-1 $space-2;
 		}
 
 		&__link {
+			position: relative;
 			display: flex;
 			align-items: center;
-			gap: $space-3;
-			padding: $space-2 $space-3;
+			gap: $space-2;
+			padding: 7px $space-2;
+			border-radius: $radius-lg;
+			color: $sb-text;
+			text-decoration: none;
 			font-size: $text-sm;
 			font-weight: $font-medium;
-			color: $neutral-600;
-			border-radius: $radius-lg;
-			transition: all $transition-fast;
+			white-space: nowrap;
+			transition: color $transition-fast, background $transition-fast;
+
+			.sb--c & {
+				justify-content: center;
+				padding: 8px;
+			}
 
 			&:hover {
-				background: $neutral-50;
-				color: $neutral-900;
+				background: $sb-hover;
+				color: $sb-bright;
 			}
 
 			&--active {
-				background: $primary-50;
-				color: $primary-700;
+				background: $sb-active;
+				color: $sb-accent;
 			}
 
-			&--expanded {
-				color: $neutral-900;
-				font-weight: $font-semibold;
+			&--parent {
+				color: $sb-bright;
 			}
 		}
 
 		&__link-icon {
-			width: 1.25rem;
-			text-align: center;
+			@include flex-center;
+			width: 20px;
+			height: 20px;
 			flex-shrink: 0;
+
+			svg { display: block; }
+		}
+
+		&__link-name {
+			flex: 1;
+			min-width: 0;
+			@include truncate;
 		}
 
 		&__chevron {
-			margin-left: auto;
-			color: $neutral-400;
+			flex-shrink: 0;
+			color: $sb-text;
+			opacity: 0.4;
 			transition: transform $transition-fast;
 
-			&--open {
-				transform: rotate(90deg);
+			&--open { transform: rotate(90deg); }
+		}
+
+		&__tip {
+			position: absolute;
+			left: calc(100% + 10px);
+			top: 50%;
+			transform: translateY(-50%);
+			background: $neutral-800;
+			color: $sb-bright;
+			font-size: $text-xs;
+			font-weight: $font-medium;
+			padding: 4px 10px;
+			border-radius: $radius-md;
+			white-space: nowrap;
+			opacity: 0;
+			pointer-events: none;
+			transition: opacity 0.12s ease;
+			z-index: 200;
+			box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+
+			&::before {
+				content: '';
+				position: absolute;
+				right: 100%;
+				top: 50%;
+				transform: translateY(-50%);
+				border: 4px solid transparent;
+				border-right-color: $neutral-800;
+			}
+
+			.sb__link:hover & {
+				opacity: 1;
 			}
 		}
 
 		&__sub {
 			display: flex;
 			flex-direction: column;
-			margin-left: calc($space-3 + 0.625rem);
-			padding-left: $space-4;
-			padding-top: $space-1;
-			padding-bottom: $space-1;
+			padding-left: 30px;
+			margin: 2px 0 $space-1;
 			position: relative;
 
 			&::before {
 				content: '';
 				position: absolute;
-				left: 0;
+				left: 19px;
 				top: 0;
-				bottom: 0;
-				width: 2px;
-				background: $neutral-200;
-				border-radius: 1px;
+				bottom: 4px;
+				width: 1px;
+				background: $sb-border;
 			}
 		}
 
-		&__sublink {
+		&__sub-link {
 			display: flex;
 			align-items: center;
 			gap: $space-2;
-			padding: 6px $space-3;
+			padding: 5px $space-2;
+			border-radius: $radius-md;
+			color: $sb-text;
+			text-decoration: none;
 			font-size: $text-xs;
 			font-weight: $font-medium;
-			color: $neutral-500;
-			border-radius: $radius-md;
-			transition: all $transition-fast;
-			position: relative;
-
-			&::before {
-				content: '';
-				width: 5px;
-				height: 5px;
-				border-radius: 50%;
-				background: $neutral-300;
-				flex-shrink: 0;
-				transition: all $transition-fast;
-			}
+			white-space: nowrap;
+			transition: color $transition-fast, background $transition-fast;
 
 			&:hover {
-				color: $neutral-800;
-				background: $neutral-50;
-
-				&::before {
-					background: $neutral-500;
-				}
+				color: $sb-bright;
+				background: $sb-hover;
 			}
 
 			&--active {
-				color: $primary-700;
-				background: $primary-50;
+				color: $sb-accent;
 
-				&::before {
-					background: $primary-500;
-					box-shadow: 0 0 0 2px rgba($primary-500, 0.2);
+				.sb__sub-dot {
+					background: $sb-accent;
+					box-shadow: 0 0 0 2px rgba($primary-400, 0.2);
 				}
 			}
 		}
 
-		&__footer {
-			border-top: 1px solid $neutral-200;
-			padding: $space-4;
+		&__sub-dot {
+			width: 5px;
+			height: 5px;
+			border-radius: 50%;
+			background: rgba(255, 255, 255, 0.15);
+			flex-shrink: 0;
+			transition: all $transition-fast;
 		}
 
-		&__status {
+		&__foot {
 			display: flex;
 			align-items: center;
 			gap: $space-2;
-			font-size: $text-xs;
-			color: $neutral-500;
+			padding: $space-3;
+			border-top: 1px solid $sb-border;
+			flex-shrink: 0;
+
+			.sb--c & {
+				justify-content: center;
+			}
 		}
 
-		&__dot {
-			width: 8px;
-			height: 8px;
+		&__pulse {
+			width: 7px;
+			height: 7px;
 			border-radius: 50%;
 			background: $success-500;
+			flex-shrink: 0;
+			box-shadow: 0 0 0 2px rgba($success-500, 0.2);
 		}
 
-		&__version {
-			margin-top: $space-1;
+		&__foot-text {
 			font-size: $text-xs;
-			color: $neutral-400;
+			color: $sb-text;
+		}
+
+		&__foot-ver {
+			font-family: $font-mono;
+			font-size: 10px;
+			color: $sb-text;
+			opacity: 0.35;
+			margin-left: auto;
 		}
 	}
 </style>

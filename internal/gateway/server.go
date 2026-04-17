@@ -147,8 +147,16 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/v1/automations", s.handleListAutomations)
 	s.mux.HandleFunc("POST /api/v1/automations", s.handleCreateAutomation)
 	s.mux.HandleFunc("GET /api/v1/automations/{id}", s.handleGetAutomation)
+	s.mux.HandleFunc("GET /api/v1/automations/{id}/yaml", s.handleGetAutomationYAML)
 	s.mux.HandleFunc("PUT /api/v1/automations/{id}", s.handleUpdateAutomation)
 	s.mux.HandleFunc("DELETE /api/v1/automations/{id}", s.handleDeleteAutomation)
+
+	// App endpoints.
+	s.mux.HandleFunc("GET /api/v1/apps", s.handleListApps)
+	s.mux.HandleFunc("POST /api/v1/apps", s.handleCreateApp)
+	s.mux.HandleFunc("GET /api/v1/apps/{id}", s.handleGetApp)
+	s.mux.HandleFunc("PUT /api/v1/apps/{id}", s.handleUpdateApp)
+	s.mux.HandleFunc("DELETE /api/v1/apps/{id}", s.handleDeleteApp)
 
 	// Discovery endpoints.
 	s.mux.HandleFunc("GET /api/v1/providers", s.handleListProviders)
@@ -316,6 +324,158 @@ func (s *Server) handleListTools(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, schemas)
 }
 
+// --- App handlers ---
+
+func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
+	apps, err := s.store.ListApps(r.Context(), sdk.AppFilter{
+		UserID: getUserID(r),
+		Limit:  100,
+	})
+	if err != nil {
+		slog.Error("failed to list apps", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to list apps")
+		return
+	}
+	if apps == nil {
+		apps = []*sdk.AppRecord{}
+	}
+	writeJSON(w, http.StatusOK, apps)
+}
+
+func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Sharing     string `json:"sharing"`
+		TeamID      string `json:"team_id,omitempty"`
+		Tools       string `json:"tools"`
+		Config      string `json:"config"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	if req.Sharing == "" {
+		req.Sharing = "personal"
+	}
+	if req.Tools == "" {
+		req.Tools = "[]"
+	}
+	if req.Config == "" {
+		req.Config = "{}"
+	}
+
+	now := time.Now()
+	app := &sdk.AppRecord{
+		ID:          uuid.New().String(),
+		Name:        req.Name,
+		Description: req.Description,
+		CreatedBy:   getUserID(r),
+		Sharing:     req.Sharing,
+		TeamID:      req.TeamID,
+		Status:      sdk.AppDraft,
+		Tools:       req.Tools,
+		Config:      req.Config,
+		Enabled:     true,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	if err := s.store.CreateApp(r.Context(), app); err != nil {
+		slog.Error("failed to create app", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to create app")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, app)
+}
+
+func (s *Server) handleGetApp(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	app, err := s.store.GetApp(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "app not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, app)
+}
+
+func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	existing, err := s.store.GetApp(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "app not found")
+		return
+	}
+
+	var req struct {
+		Name        *string        `json:"name,omitempty"`
+		Description *string        `json:"description,omitempty"`
+		Sharing     *string        `json:"sharing,omitempty"`
+		TeamID      *string        `json:"team_id,omitempty"`
+		Status      *sdk.AppStatus `json:"status,omitempty"`
+		Tools       *string        `json:"tools,omitempty"`
+		Config      *string        `json:"config,omitempty"`
+		URL         *string        `json:"url,omitempty"`
+		Enabled     *bool          `json:"enabled,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.Name != nil {
+		existing.Name = *req.Name
+	}
+	if req.Description != nil {
+		existing.Description = *req.Description
+	}
+	if req.Sharing != nil {
+		existing.Sharing = *req.Sharing
+	}
+	if req.TeamID != nil {
+		existing.TeamID = *req.TeamID
+	}
+	if req.Status != nil {
+		existing.Status = *req.Status
+	}
+	if req.Tools != nil {
+		existing.Tools = *req.Tools
+	}
+	if req.Config != nil {
+		existing.Config = *req.Config
+	}
+	if req.URL != nil {
+		existing.URL = *req.URL
+	}
+	if req.Enabled != nil {
+		existing.Enabled = *req.Enabled
+	}
+	existing.UpdatedAt = time.Now()
+
+	if err := s.store.UpdateApp(r.Context(), existing); err != nil {
+		slog.Error("failed to update app", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to update app")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, existing)
+}
+
+func (s *Server) handleDeleteApp(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := s.store.DeleteApp(r.Context(), id); err != nil {
+		slog.Error("failed to delete app", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to delete app")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
 // --- Automation handlers ---
 
 func (s *Server) handleListAutomations(w http.ResponseWriter, r *http.Request) {
@@ -398,6 +558,26 @@ func (s *Server) handleGetAutomation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, automation)
+}
+
+func (s *Server) handleGetAutomationYAML(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	automation, err := s.store.GetAutomation(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "automation not found")
+		return
+	}
+
+	out, err := automationToYAML(automation)
+	if err != nil {
+		slog.Error("failed to serialize automation as yaml", "error", err, "automation_id", id)
+		writeError(w, http.StatusInternalServerError, "failed to serialize automation")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(out)
 }
 
 func (s *Server) handleUpdateAutomation(w http.ResponseWriter, r *http.Request) {

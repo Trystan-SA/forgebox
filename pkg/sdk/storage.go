@@ -14,6 +14,7 @@ type StoragePlugin interface {
 	AuditStore
 	UserStore
 	AutomationStore
+	AppStore
 }
 
 // TaskStore manages task persistence.
@@ -135,6 +136,15 @@ type UserRecord struct {
 	Disabled     bool     `json:"disabled"`
 }
 
+// AppStore manages app persistence.
+type AppStore interface {
+	CreateApp(ctx context.Context, app *AppRecord) error
+	GetApp(ctx context.Context, id string) (*AppRecord, error)
+	UpdateApp(ctx context.Context, app *AppRecord) error
+	DeleteApp(ctx context.Context, id string) error
+	ListApps(ctx context.Context, filter AppFilter) ([]*AppRecord, error)
+}
+
 // AutomationStore manages automation persistence.
 type AutomationStore interface {
 	CreateAutomation(ctx context.Context, automation *AutomationRecord) error
@@ -164,6 +174,43 @@ type AutomationRecord struct {
 type AutomationFilter struct {
 	UserID string
 	TeamID string
+	Limit  int
+	Offset int
+}
+
+// AppStatus is the lifecycle state of an app.
+type AppStatus string
+
+const (
+	AppDraft     AppStatus = "draft"
+	AppDeploying AppStatus = "deploying"
+	AppRunning   AppStatus = "running"
+	AppStopped   AppStatus = "stopped"
+	AppError     AppStatus = "error"
+)
+
+// AppRecord represents a stored internal tool app.
+type AppRecord struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	CreatedBy   string    `json:"created_by"`
+	Sharing     string    `json:"sharing"` // "personal", "team", "org"
+	TeamID      string    `json:"team_id,omitempty"`
+	Status      AppStatus `json:"status"`
+	Tools       string    `json:"tools"`  // JSON array of granted tools
+	Config      string    `json:"config"` // JSON blob for VM/model config
+	URL         string    `json:"url"`    // iframe URL when running
+	Enabled     bool      `json:"enabled"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// AppFilter specifies criteria for listing apps.
+type AppFilter struct {
+	UserID string
+	TeamID string
+	Status AppStatus
 	Limit  int
 	Offset int
 }

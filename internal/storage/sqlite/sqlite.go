@@ -141,6 +141,27 @@ func (s *Store) migrate() error {
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_automations_user ON automations(created_by)`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_automations_team ON automations(team_id)`)
 
+	/* Apps table. */
+	s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS apps (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			created_by TEXT NOT NULL,
+			sharing TEXT NOT NULL DEFAULT 'personal',
+			team_id TEXT,
+			status TEXT NOT NULL DEFAULT 'draft',
+			tools TEXT NOT NULL DEFAULT '[]',
+			config TEXT NOT NULL DEFAULT '{}',
+			url TEXT NOT NULL DEFAULT '',
+			enabled INTEGER DEFAULT 1,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)
+	`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_apps_user ON apps(created_by)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_apps_team ON apps(team_id)`)
+
 	return nil
 }
 
@@ -514,6 +535,109 @@ func scanAutomationRow(rows *sql.Rows) (*sdk.AutomationRecord, error) {
 	var teamID sql.NullString
 	err := rows.Scan(&a.ID, &a.Name, &a.Description, &a.CreatedBy, &a.Sharing, &teamID,
 		&a.Trigger, &a.Nodes, &a.Edges, &enabled, &createdAt, &updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	a.TeamID = teamID.String
+	a.Enabled = enabled != 0
+	a.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	a.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	return &a, nil
+}
+
+// --- AppStore ---
+
+func (s *Store) CreateApp(ctx context.Context, app *sdk.AppRecord) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO apps (id, name, description, created_by, sharing, team_id, status, tools, config, url, enabled, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		app.ID, app.Name, app.Description, app.CreatedBy, app.Sharing, app.TeamID,
+		app.Status, app.Tools, app.Config, app.URL, boolToInt(app.Enabled),
+		app.CreatedAt.Format(time.RFC3339), app.UpdatedAt.Format(time.RFC3339),
+	)
+	return err
+}
+
+func (s *Store) GetApp(ctx context.Context, id string) (*sdk.AppRecord, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, name, description, created_by, sharing, team_id, status, tools, config, url, enabled, created_at, updated_at
+		 FROM apps WHERE id = ?`, id)
+	return scanApp(row)
+}
+
+func (s *Store) UpdateApp(ctx context.Context, app *sdk.AppRecord) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE apps SET name=?, description=?, sharing=?, team_id=?, status=?, tools=?, config=?, url=?, enabled=?, updated_at=?
+		 WHERE id=?`,
+		app.Name, app.Description, app.Sharing, app.TeamID,
+		app.Status, app.Tools, app.Config, app.URL, boolToInt(app.Enabled),
+		app.UpdatedAt.Format(time.RFC3339), app.ID,
+	)
+	return err
+}
+
+func (s *Store) DeleteApp(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM apps WHERE id = ?`, id)
+	return err
+}
+
+func (s *Store) ListApps(ctx context.Context, filter sdk.AppFilter) ([]*sdk.AppRecord, error) {
+	query := `SELECT id, name, description, created_by, sharing, team_id, status, tools, config, url, enabled, created_at, updated_at FROM apps WHERE 1=1`
+	args := []any{}
+	if filter.UserID != "" {
+		query += ` AND (created_by = ? OR sharing = 'org' OR (sharing = 'team' AND team_id IN (SELECT team_ids FROM users WHERE id = ?)))`
+		args = append(args, filter.UserID, filter.UserID)
+	}
+	if filter.Status != "" {
+		query += " AND status = ?"
+		args = append(args, filter.Status)
+	}
+	query += " ORDER BY updated_at DESC"
+	if filter.Limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d", filter.Limit)
+	}
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var apps []*sdk.AppRecord
+	for rows.Next() {
+		a, err := scanAppRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		apps = append(apps, a)
+	}
+	return apps, rows.Err()
+}
+
+func scanApp(row *sql.Row) (*sdk.AppRecord, error) {
+	var a sdk.AppRecord
+	var enabled int
+	var createdAt, updatedAt string
+	var teamID sql.NullString
+	err := row.Scan(&a.ID, &a.Name, &a.Description, &a.CreatedBy, &a.Sharing, &teamID,
+		&a.Status, &a.Tools, &a.Config, &a.URL, &enabled, &createdAt, &updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	a.TeamID = teamID.String
+	a.Enabled = enabled != 0
+	a.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	a.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	return &a, nil
+}
+
+func scanAppRow(rows *sql.Rows) (*sdk.AppRecord, error) {
+	var a sdk.AppRecord
+	var enabled int
+	var createdAt, updatedAt string
+	var teamID sql.NullString
+	err := rows.Scan(&a.ID, &a.Name, &a.Description, &a.CreatedBy, &a.Sharing, &teamID,
+		&a.Status, &a.Tools, &a.Config, &a.URL, &enabled, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err
 	}

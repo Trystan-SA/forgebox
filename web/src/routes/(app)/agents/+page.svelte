@@ -1,32 +1,21 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { listAutomations, deleteAutomation } from '$lib/api/client';
-	import type { Automation } from '$lib/api/types';
+	import type { Agent } from '$lib/api/types';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import { formatDistanceToNow } from 'date-fns';
 
-	let automations = $state<Automation[]>([]);
+	let agents = $state<Agent[]>([]);
 	let loading = $state(true);
-	let error = $state<string | null>(null);
 
-	onMount(async () => {
-		try {
-			automations = await listAutomations();
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to load';
-		} finally {
-			loading = false;
-		}
+	onMount(() => {
+		agents = JSON.parse(localStorage.getItem('forgebox_agents') ?? '[]');
+		loading = false;
 	});
 
-	async function handleDelete(id: string) {
-		if (!confirm('Delete this workflow?')) return;
-		try {
-			await deleteAutomation(id);
-			automations = automations.filter((a) => a.id !== id);
-		} catch (err) {
-			alert(err instanceof Error ? err.message : 'Delete failed');
-		}
+	function handleDelete(id: string) {
+		if (!confirm('Delete this agent?')) return;
+		agents = agents.filter((a) => a.id !== id);
+		localStorage.setItem('forgebox_agents', JSON.stringify(agents));
 	}
 
 	function sharingLabel(s: string) {
@@ -39,46 +28,48 @@
 <div class="page">
 	<div class="page__header">
 		<div>
-			<h1>Workflows</h1>
-			<p>Build visual workflows to automate AI tasks</p>
+			<h1>Agents</h1>
+			<p>Create and manage AI agents for your team</p>
 		</div>
-		<a href="/automations/new" class="btn-primary">New Workflow</a>
+		<a href="/agents/new" class="btn-primary">New Agent</a>
 	</div>
 
 	{#if loading}
 		<p class="page__loading">Loading...</p>
-	{:else if error}
-		<p class="page__error">Error: {error}</p>
-	{:else if automations.length === 0}
+	{:else if agents.length === 0}
 		<EmptyState
-			title="No workflows yet"
-			description="Create your first workflow to chain AI tasks together visually."
+			title="No agents yet"
+			description="Agents are autonomous AI assistants configured with custom instructions, tools, and permissions."
 		>
-			<a href="/automations/new" class="btn-primary">Create Workflow</a>
+			<a href="/agents/new" class="btn-primary">Create Agent</a>
 		</EmptyState>
 	{:else}
 		<div class="grid">
-			{#each automations as automation}
-				<a href="/automations/{automation.id}" class="card">
+			{#each agents as agent}
+				<a href="/agents/{agent.id}" class="card">
 					<div class="card__top">
 						<div class="card__title-row">
-							<h3 class="card__name">{automation.name}</h3>
-							<span class="card__badge card__badge--{automation.sharing}">{sharingLabel(automation.sharing)}</span>
+							<h3 class="card__name">{agent.name}</h3>
+							<span class="card__badge card__badge--{agent.sharing}">{sharingLabel(agent.sharing)}</span>
 						</div>
-						{#if automation.description}
-							<p class="card__desc">{automation.description}</p>
+						{#if agent.description}
+							<p class="card__desc">{agent.description}</p>
 						{/if}
+						<div class="card__meta-row">
+							<span class="card__chip">{agent.provider}</span>
+							<span class="card__chip">{agent.model}</span>
+							{#if agent.tools.length > 0}
+								<span class="card__chip">{agent.tools.length} tool{agent.tools.length > 1 ? 's' : ''}</span>
+							{/if}
+						</div>
 					</div>
 					<div class="card__bottom">
 						<span class="card__meta">
-							{automation.enabled ? '🟢 Active' : '⏸ Disabled'}
-						</span>
-						<span class="card__meta">
-							Updated {formatDistanceToNow(new Date(automation.updated_at))} ago
+							Updated {formatDistanceToNow(new Date(agent.updated_at))} ago
 						</span>
 						<button
 							class="card__delete"
-							onclick={(e) => { e.stopPropagation(); handleDelete(automation.id); }}
+							onclick={(e) => { e.preventDefault(); handleDelete(agent.id); }}
 						>
 							Delete
 						</button>
@@ -116,8 +107,8 @@
 		flex-direction: column;
 		justify-content: space-between;
 		gap: $space-4;
-		transition: border-color $transition-fast;
 		text-decoration: none;
+		transition: border-color $transition-fast;
 
 		&:hover { border-color: $primary-300; }
 
@@ -140,6 +131,21 @@
 			font-size: $text-sm;
 			color: $neutral-500;
 			line-height: $leading-relaxed;
+		}
+
+		&__meta-row {
+			display: flex;
+			gap: $space-2;
+			flex-wrap: wrap;
+		}
+
+		&__chip {
+			font-family: $font-mono;
+			font-size: 10px;
+			color: $neutral-600;
+			background: $neutral-100;
+			padding: 2px 6px;
+			border-radius: $radius-sm;
 		}
 
 		&__badge {

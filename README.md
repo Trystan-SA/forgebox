@@ -1,18 +1,22 @@
 # ForgeBox
 
+> ⚠️ **Work in progress.** ForgeBox is under active early development. Interfaces,
+> commands, and deployment layout may change without notice, and there is no
+> stable release yet. Not ready for production use.
+
 Open-source AI automation platform. Runs AI-generated tasks inside Firecracker
 microVMs so non-technical users in organizations can safely trigger AI automation
 without risk to host infrastructure.
 
 ## Why ForgeBox
 
-- **Safe by default** — every LLM-invoked tool runs inside an isolated Firecracker
+- **Safe by default**, every LLM-invoked tool runs inside an isolated Firecracker
   microVM. No tool execution on the host, ever.
-- **No network unless granted** — VMs have no internet access unless the task
+- **No network unless granted**, VMs have no internet access unless the task
   definition explicitly allowlists specific domains.
-- **Pluggable** — providers (OpenAI, Anthropic, ...), channels (Slack, webhook,
+- **Pluggable** providers (OpenAI, Anthropic, ...), channels (Slack, webhook,
   email), tools, and storage backends are all plugins behind stable SDK interfaces.
-- **Single entry point** — API, WebSocket, and admin dashboard all route through
+- **Single entry point**, API, WebSocket, and admin dashboard all route through
   one gateway binary.
 
 ## Quick Start
@@ -33,11 +37,11 @@ docker compose -f docker-compose.dev.yml up
 
 Services:
 
-| Service   | Port | Description                    |
-|-----------|------|--------------------------------|
-| backend   | 8420 | Go API server (gateway)        |
-| backend   | 8421 | gRPC listener                  |
-| dashboard | 3000 | Vite dev server (web UI)       |
+| Service   | Port | Description                     |
+| --------- | ---- | ------------------------------- |
+| backend   | 8420 | Go API server (gateway)         |
+| backend   | 8421 | gRPC listener                   |
+| dashboard | 3000 | Vite dev server (web UI)        |
 | postgres  | 5432 | Optional; SQLite is the default |
 
 Open http://localhost:3000 and sign in with `FORGEBOX_FIRST_PASSWORD`.

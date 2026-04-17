@@ -161,7 +161,7 @@
 					</button>
 					<button class="quick-action" onclick={() => { goto('/automations'); }}>
 						<span class="quick-action__icon">🔄</span>
-						<span class="quick-action__label">Automations</span>
+						<span class="quick-action__label">Workflows</span>
 					</button>
 					<button class="quick-action" onclick={() => input = 'Run an agent that: '}>
 						<span class="quick-action__icon">🤖</span>

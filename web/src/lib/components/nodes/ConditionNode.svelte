@@ -4,11 +4,33 @@
 	interface Props {
 		data: {
 			label?: string;
-			condition?: string;
+			field?: string;
+			operator?: string;
+			value?: string;
+			valueType?: string;
 		};
 	}
 
 	let { data }: Props = $props();
+
+	const operatorLabels: Record<string, string> = {
+		equals: '==',
+		not_equals: '!=',
+		contains: 'contains',
+		not_contains: '!contains',
+		gt: '>',
+		gte: '>=',
+		lt: '<',
+		lte: '<=',
+		is_true: 'is true',
+		is_false: 'is false',
+		is_empty: 'is empty',
+		is_not_empty: 'is not empty'
+	};
+
+	const unaryOps = ['is_true', 'is_false', 'is_empty', 'is_not_empty'];
+	const isUnary = $derived(unaryOps.includes(data.operator ?? ''));
+	const opLabel = $derived(operatorLabels[data.operator ?? ''] ?? data.operator);
 </script>
 
 <div class="nd">
@@ -19,8 +41,16 @@
 			<span class="nd__tag">Condition</span>
 		</div>
 		<p class="nd__label">{data.label || 'If / Else'}</p>
-		{#if data.condition}
-			<p class="nd__condition">{data.condition}</p>
+		{#if data.field && data.operator}
+			<div class="nd__expr">
+				<span class="nd__expr-field">{data.field}</span>
+				<span class="nd__expr-op">{opLabel}</span>
+				{#if !isUnary && data.value}
+					<span class="nd__expr-val">{data.value}</span>
+				{/if}
+			</div>
+		{:else if data.field}
+			<p class="nd__condition">{data.field}</p>
 		{/if}
 		<div class="nd__branches">
 			<span class="nd__branch nd__branch--true">True</span>
@@ -91,6 +121,34 @@
 			background: $info-100;
 			padding: $space-2;
 			border-radius: $radius-md;
+		}
+
+		&__expr {
+			display: flex;
+			align-items: center;
+			gap: $space-1;
+			font-family: $font-mono;
+			font-size: 10px;
+			background: $info-100;
+			padding: $space-1 $space-2;
+			border-radius: $radius-md;
+			flex-wrap: wrap;
+		}
+
+		&__expr-field {
+			color: $info-600;
+			font-weight: $font-semibold;
+		}
+
+		&__expr-op {
+			color: $info-500;
+		}
+
+		&__expr-val {
+			color: $info-600;
+			background: $neutral-0;
+			padding: 0 4px;
+			border-radius: $radius-sm;
 		}
 
 		&__branches {

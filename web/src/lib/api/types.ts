@@ -183,6 +183,76 @@ export interface TokenUsage {
 	period: string;
 }
 
+export type AgentSharing = 'personal' | 'team' | 'org';
+export type AgentRole = 'worker' | 'orchestrator';
+
+export interface Agent {
+	id: string;
+	name: string;
+	description: string;
+	role: AgentRole;
+	system_prompt: string;
+	provider: string;
+	model: string;
+	tools: string[];
+	sharing: AgentSharing;
+	created_by: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface CreateAgentRequest {
+	name: string;
+	description?: string;
+	role?: AgentRole;
+	system_prompt?: string;
+	provider?: string;
+	model?: string;
+	tools?: string[];
+	sharing?: AgentSharing;
+}
+
+export type AppStatus = 'draft' | 'deploying' | 'running' | 'stopped' | 'error';
+export type AppSharing = 'personal' | 'team' | 'org';
+export type AppTool = 'database' | 'api' | 'ai';
+
+export interface App {
+	id: string;
+	name: string;
+	description: string;
+	created_by: string;
+	sharing: AppSharing;
+	team_id?: string;
+	status: AppStatus;
+	tools: string;
+	config: string;
+	url: string;
+	enabled: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface CreateAppRequest {
+	name: string;
+	description?: string;
+	sharing?: AppSharing;
+	team_id?: string;
+	tools?: string;
+	config?: string;
+}
+
+export interface UpdateAppRequest {
+	name?: string;
+	description?: string;
+	sharing?: AppSharing;
+	team_id?: string;
+	status?: AppStatus;
+	tools?: string;
+	config?: string;
+	url?: string;
+	enabled?: boolean;
+}
+
 export interface LoginRequest {
 	email: string;
 	password: string;

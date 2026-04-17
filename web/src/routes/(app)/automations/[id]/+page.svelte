@@ -2,7 +2,7 @@
 	import { onMount, tick } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { getAutomation, updateAutomation } from '$lib/api/client';
+	import { getAutomation, updateAutomation, getAutomationYaml } from '$lib/api/client';
 	import type { Automation } from '$lib/api/types';
 	import {
 		SvelteFlow,
@@ -22,15 +22,16 @@
 	import AIStepNode from '$lib/components/nodes/AIStepNode.svelte';
 	import ToolNode from '$lib/components/nodes/ToolNode.svelte';
 	import ConditionNode from '$lib/components/nodes/ConditionNode.svelte';
-	import OutputNode from '$lib/components/nodes/OutputNode.svelte';
+	import SwitchNode from '$lib/components/nodes/SwitchNode.svelte';
 	import MetroEdge from '$lib/components/nodes/MetroEdge.svelte';
+	import NodeConfigPanel from '$lib/components/nodes/NodeConfigPanel.svelte';
 
 	const nodeTypes: NodeTypes = {
 		trigger: TriggerNode,
 		aiStep: AIStepNode,
 		tool: ToolNode,
 		condition: ConditionNode,
-		output: OutputNode
+		switch: SwitchNode
 	} as unknown as NodeTypes;
 
 	const edgeTypes: EdgeTypes = {
@@ -62,11 +63,18 @@
 				nodes = [...defaultNodes];
 			}
 		} catch {
-			error = 'Automation not found';
+			error = 'Workflow not found';
 		} finally {
 			loading = false;
 		}
 	});
+
+	let selectedNodeId = $state<string | null>(null);
+	const selectedNode = $derived(nodes.find((n) => n.id === selectedNodeId) ?? null);
+
+	function updateNodeData(id: string, data: Record<string, any>) {
+		nodes = nodes.map((n) => (n.id === id ? { ...n, data } : n));
+	}
 
 	let contextMenu = $state<{ x: number; y: number } | null>(null);
 	let canvasEl: HTMLDivElement;
@@ -116,8 +124,11 @@
 		{
 			label: 'Flow',
 			items: [
-				{ type: 'condition', label: 'Condition', icon: '', desc: 'Branch based on a condition', data: {} },
-				{ type: 'output', label: 'Output', icon: '', desc: 'Send or store the final result', data: { outputType: 'store' } }
+				{ type: 'condition', label: 'If / Else', icon: '', desc: 'Branch on a true/false condition', data: {} },
+				{ type: 'condition', label: 'Boolean Check', icon: '', desc: 'Check if a value is true or false', data: { operator: 'is_true', valueType: 'boolean' } },
+				{ type: 'condition', label: 'String Compare', icon: '', desc: 'Compare text values', data: { operator: 'equals', valueType: 'string' } },
+				{ type: 'condition', label: 'Number Compare', icon: '', desc: 'Compare numeric values', data: { operator: 'gt', valueType: 'number' } },
+				{ type: 'switch', label: 'Switch', icon: '', desc: 'Route to different branches by value', data: {} }
 			]
 		}
 	];
@@ -172,6 +183,7 @@
 			}
 		}
 		if (e.key === 'Escape') {
+			if (selectedNodeId) { selectedNodeId = null; return; }
 			contextMenu = null;
 		}
 	}
@@ -242,6 +254,110 @@
 			saving = false;
 		}
 	}
+
+	let yamlOpen = $state(false);
+	let yamlText = $state('');
+	let yamlLoading = $state(false);
+	let yamlError = $state<string | null>(null);
+	let yamlCopied = $state(false);
+
+	async function openYamlPreview() {
+		if (!automation) return;
+		yamlOpen = true;
+		yamlLoading = true;
+		yamlError = null;
+		yamlCopied = false;
+		try {
+			yamlText = await getAutomationYaml(automation.id);
+		} catch (err) {
+			yamlError = err instanceof Error ? err.message : 'Failed to load YAML';
+		} finally {
+			yamlLoading = false;
+		}
+	}
+
+	async function copyYaml() {
+		try {
+			await navigator.clipboard.writeText(yamlText);
+			yamlCopied = true;
+			setTimeout(() => { yamlCopied = false; }, 1500);
+		} catch {
+			yamlError = 'Clipboard unavailable';
+		}
+	}
+
+	type YamlTokKind =
+		| 'indent'
+		| 'marker'
+		| 'key'
+		| 'punc'
+		| 'string'
+		| 'number'
+		| 'bool'
+		| 'null'
+		| 'comment'
+		| 'plain';
+	type YamlTok = { text: string; kind: YamlTokKind };
+
+	function findUnquotedHash(s: string): number {
+		let inStr = false;
+		for (let i = 0; i < s.length; i++) {
+			const c = s[i];
+			if (c === '"' && s[i - 1] !== '\\') inStr = !inStr;
+			if (c === '#' && !inStr && (i === 0 || /\s/.test(s[i - 1]))) return i;
+		}
+		return -1;
+	}
+
+	function classifyValue(s: string): YamlTok {
+		if (/^"(\\.|[^"\\])*"$/.test(s)) return { text: s, kind: 'string' };
+		if (/^-?\d+(\.\d+)?$/.test(s)) return { text: s, kind: 'number' };
+		if (/^(true|false)$/i.test(s)) return { text: s, kind: 'bool' };
+		if (/^(null|~)$/i.test(s)) return { text: s, kind: 'null' };
+		return { text: s, kind: 'plain' };
+	}
+
+	function highlightYaml(line: string): YamlTok[] {
+		const tokens: YamlTok[] = [];
+		const indentMatch = /^[ \t]+/.exec(line);
+		if (indentMatch) tokens.push({ text: indentMatch[0], kind: 'indent' });
+		let rest = indentMatch ? line.slice(indentMatch[0].length) : line;
+
+		if (rest.startsWith('- ')) {
+			tokens.push({ text: '- ', kind: 'marker' });
+			rest = rest.slice(2);
+		} else if (rest === '-') {
+			tokens.push({ text: '-', kind: 'marker' });
+			return tokens;
+		}
+
+		let commentText = '';
+		const hashIdx = findUnquotedHash(rest);
+		if (hashIdx >= 0) {
+			commentText = rest.slice(hashIdx);
+			rest = rest.slice(0, hashIdx);
+		}
+
+		const keyMatch = /^([A-Za-z_][\w-]*|"(?:\\.|[^"\\])*")\s*:/.exec(rest);
+		if (keyMatch) {
+			tokens.push({ text: keyMatch[1], kind: 'key' });
+			tokens.push({ text: ':', kind: 'punc' });
+			let after = rest.slice(keyMatch[0].length);
+			const spaceMatch = /^\s+/.exec(after);
+			if (spaceMatch) {
+				tokens.push({ text: spaceMatch[0], kind: 'plain' });
+				after = after.slice(spaceMatch[0].length);
+			}
+			if (after) tokens.push(classifyValue(after));
+		} else if (rest.length > 0) {
+			tokens.push(classifyValue(rest));
+		}
+
+		if (commentText) tokens.push({ text: commentText, kind: 'comment' });
+		return tokens;
+	}
+
+	const yamlLines = $derived(yamlText ? yamlText.split('\n').map(highlightYaml) : []);
 </script>
 
 {#if loading}
@@ -258,12 +374,17 @@
 				<h2 class="editor__title">{automation.name}</h2>
 			</div>
 			<div class="editor__right">
+				<button class="btn-secondary editor__yaml" onclick={openYamlPreview} title="Preview automation as YAML">
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></svg>
+					<span>YAML</span>
+				</button>
 				<button class="btn-primary editor__save" onclick={handleSave} disabled={saving}>
 					{saving ? 'Saving...' : 'Save'}
 				</button>
 			</div>
 		</div>
 
+		<div class="editor__main">
 		<div class="editor__canvas" bind:this={canvasEl} onkeydown={handleCanvasKeydown} oncontextmenu={handleContextMenu} tabindex="-1">
 			<SvelteFlow
 				bind:nodes
@@ -277,6 +398,8 @@
 				deleteKey="Delete"
 				snapGrid={[20, 20]}
 				defaultEdgeOptions={{ type: 'metro' }}
+				onnodeclick={({ node }) => { selectedNodeId = node.id; }}
+				onpaneclick={() => { selectedNodeId = null; }}
 				onconnectstart={(_, params) => {
 					if (params.nodeId) {
 						pendingConnection = { sourceId: params.nodeId, sourceHandle: params.handleId ?? null };
@@ -315,7 +438,7 @@
 							<line x1="8" y1="12" x2="16" y2="12" />
 						</svg>
 						<h3>No trigger yet</h3>
-						<p>Press <kbd>Space</kbd> or <kbd>Right-click</kbd> to add a trigger and start building your automation.</p>
+						<p>Press <kbd>Space</kbd> or <kbd>Right-click</kbd> to add a trigger and start building your workflow.</p>
 					</div>
 				</div>
 			{/if}
@@ -404,6 +527,46 @@
 				</div>
 			{/if}
 		</div>
+		{#if selectedNode}
+			<NodeConfigPanel
+				node={selectedNode}
+				onupdate={updateNodeData}
+				onclose={() => { selectedNodeId = null; }}
+			/>
+		{/if}
+		</div>
+
+		{#if yamlOpen}
+			<button class="yaml-overlay" onclick={() => { yamlOpen = false; }} aria-label="Close YAML preview"></button>
+			<div class="yaml-modal" role="dialog" aria-label="Automation YAML preview">
+				<div class="yaml-modal__head">
+					<div class="yaml-modal__title">
+						<span class="yaml-modal__title-tag">yaml</span>
+						<span class="yaml-modal__title-name">{automation.name}</span>
+					</div>
+					<div class="yaml-modal__actions">
+						<button class="btn-ghost yaml-modal__copy" onclick={copyYaml} disabled={yamlLoading || !yamlText}>
+							{yamlCopied ? 'Copied' : 'Copy'}
+						</button>
+						<button class="yaml-modal__close" onclick={() => { yamlOpen = false; }} aria-label="Close">
+							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+						</button>
+					</div>
+				</div>
+				<div class="yaml-modal__body">
+					{#if yamlLoading}
+						<div class="yaml-modal__state">Loading…</div>
+					{:else if yamlError}
+						<div class="yaml-modal__state yaml-modal__state--error">{yamlError}</div>
+					{:else}
+						<pre class="yaml-modal__pre"><code>{#each yamlLines as line, i}{#each line as tok}<span class="yml-{tok.kind}">{tok.text}</span>{/each}{i < yamlLines.length - 1 ? '\n' : ''}{/each}</code></pre>
+					{/if}
+				</div>
+				<div class="yaml-modal__foot">
+					<span>Reflects the last saved state. Save first to include unsaved changes.</span>
+				</div>
+			</div>
+		{/if}
 	</div>
 {/if}
 
@@ -419,8 +582,7 @@
 	.editor {
 		display: flex;
 		flex-direction: column;
-		height: calc(100vh - $topbar-height);
-		margin: (-$space-8) (-$space-6);
+		height: 100%;
 
 		&__toolbar {
 			@include flex-between;
@@ -469,6 +631,25 @@
 
 		&__save {
 			padding: $space-2 $space-4;
+		}
+
+		&__yaml {
+			display: inline-flex;
+			align-items: center;
+			gap: $space-2;
+			padding: $space-2 $space-3;
+			font-family: $font-mono;
+			font-size: $text-xs;
+			text-transform: uppercase;
+			letter-spacing: 0.04em;
+
+			svg { color: $neutral-500; }
+		}
+
+		&__main {
+			flex: 1;
+			display: flex;
+			overflow: hidden;
 		}
 
 		&__canvas {
@@ -814,5 +995,158 @@
 	@keyframes ctx-item-in {
 		from { opacity: 0; transform: translateX(-4px); }
 		to { opacity: 1; transform: translateX(0); }
+	}
+
+	.yaml-overlay {
+		position: fixed;
+		inset: 0;
+		z-index: 50;
+		background: rgba($neutral-900, 0.4);
+		border: none;
+		cursor: default;
+		animation: ctx-fade 0.15s ease-out;
+	}
+
+	.yaml-modal {
+		position: fixed;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		z-index: 51;
+		width: min(720px, 92vw);
+		max-height: 82vh;
+		background: $neutral-0;
+		border: 1px solid $neutral-200;
+		border-radius: $radius-2xl;
+		box-shadow: $shadow-lg;
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+		animation: ctx-appear 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+
+		&__head {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: $space-3;
+			padding: $space-3 $space-4;
+			border-bottom: 1px solid $neutral-100;
+		}
+
+		&__title {
+			display: flex;
+			align-items: center;
+			gap: $space-2;
+			min-width: 0;
+		}
+
+		&__title-tag {
+			font-family: $font-mono;
+			font-size: 10px;
+			font-weight: $font-bold;
+			color: $primary-700;
+			background: $primary-50;
+			padding: 2px 6px;
+			border-radius: $radius-sm;
+			text-transform: uppercase;
+			letter-spacing: 0.08em;
+		}
+
+		&__title-name {
+			font-size: $text-sm;
+			font-weight: $font-semibold;
+			color: $neutral-800;
+			white-space: nowrap;
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+
+		&__actions {
+			display: flex;
+			align-items: center;
+			gap: $space-2;
+			flex-shrink: 0;
+		}
+
+		&__copy {
+			font-family: $font-mono;
+			font-size: $text-xs;
+			padding: $space-1 $space-3;
+			text-transform: uppercase;
+			letter-spacing: 0.04em;
+
+			&:disabled { opacity: 0.4; cursor: not-allowed; }
+		}
+
+		&__close {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			width: 28px;
+			height: 28px;
+			border: none;
+			background: none;
+			border-radius: $radius-lg;
+			color: $neutral-400;
+			cursor: pointer;
+			transition: all $transition-fast;
+
+			&:hover { background: $neutral-100; color: $neutral-700; }
+		}
+
+		&__body {
+			flex: 1;
+			overflow: auto;
+			@include scrollbar-thin;
+			background: $neutral-50;
+		}
+
+		&__pre {
+			margin: 0;
+			padding: $space-4;
+			font-family: $font-mono;
+			font-size: $text-sm;
+			line-height: $leading-relaxed;
+			color: $neutral-700;
+			white-space: pre;
+
+			code {
+				font-family: inherit;
+				font-size: inherit;
+				background: none;
+				padding: 0;
+			}
+
+			:global(.yml-key)     { color: $primary-700; font-weight: $font-medium; }
+			:global(.yml-string)  { color: $success-700; }
+			:global(.yml-number)  { color: $warning-700; }
+			:global(.yml-bool)    { color: $info-600; font-weight: $font-medium; }
+			:global(.yml-null)    { color: $error-500; font-style: italic; }
+			:global(.yml-comment) { color: $neutral-400; font-style: italic; }
+			:global(.yml-marker)  { color: $neutral-500; font-weight: $font-bold; }
+			:global(.yml-punc)    { color: $neutral-400; }
+			:global(.yml-plain)   { color: $neutral-800; }
+			:global(.yml-indent)  { color: inherit; }
+		}
+
+		&__state {
+			padding: $space-6;
+			text-align: center;
+			font-size: $text-sm;
+			color: $neutral-500;
+
+			&--error { color: $error-600; }
+		}
+
+		&__foot {
+			padding: $space-2 $space-4;
+			border-top: 1px solid $neutral-100;
+			text-align: center;
+
+			span {
+				font-size: $text-xs;
+				color: $neutral-400;
+			}
+		}
 	}
 </style>

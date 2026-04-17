@@ -25,6 +25,7 @@
 	import SwitchNode from '$lib/components/nodes/SwitchNode.svelte';
 	import MetroEdge from '$lib/components/nodes/MetroEdge.svelte';
 	import NodeConfigPanel from '$lib/components/nodes/NodeConfigPanel.svelte';
+	import NodeContextMenu from '$lib/components/nodes/NodeContextMenu.svelte';
 	import YamlPreviewModal from '$lib/components/YamlPreviewModal.svelte';
 
 	const nodeTypes: NodeTypes = {
@@ -156,7 +157,13 @@
 	const allFilteredItems = $derived(filteredCategories.flatMap((c) => c.items));
 
 	function handleContextMenu(e: MouseEvent) {
+		const target = e.target as HTMLElement | null;
+		if (target?.closest('.svelte-flow__node')) {
+			// Node context menu is handled by onnodecontextmenu.
+			return;
+		}
 		e.preventDefault();
+		nodeContextMenu = null;
 		const rect = canvasEl.getBoundingClientRect();
 		searchQuery = '';
 		expandedCategory = null;
@@ -167,9 +174,46 @@
 		tick().then(() => searchInput?.focus());
 	}
 
+	let nodeContextMenu = $state<{ x: number; y: number; nodeId: string } | null>(null);
+
+	function openNodeContextMenu(nodeId: string, clientX: number, clientY: number) {
+		const rect = canvasEl.getBoundingClientRect();
+		contextMenu = null;
+		nodeContextMenu = {
+			nodeId,
+			x: clientX - rect.left,
+			y: clientY - rect.top
+		};
+	}
+
+	function toggleNodeDisabled(nodeId: string) {
+		nodes = nodes.map((n) => {
+			if (n.id !== nodeId) return n;
+			const disabled = !n.data?.disabled;
+			return {
+				...n,
+				data: { ...n.data, disabled },
+				className: disabled ? 'nd-disabled' : ''
+			};
+		});
+		nodeContextMenu = null;
+	}
+
+	function deleteNode(nodeId: string) {
+		nodes = nodes.filter((n) => n.id !== nodeId);
+		edges = edges.filter((e) => e.source !== nodeId && e.target !== nodeId);
+		if (selectedNodeId === nodeId) selectedNodeId = null;
+		nodeContextMenu = null;
+	}
+
+	const nodeContextTarget = $derived(
+		nodeContextMenu ? nodes.find((n) => n.id === nodeContextMenu!.nodeId) ?? null : null
+	);
+
 	function handleCanvasKeydown(e: KeyboardEvent) {
 		if (e.key === ' ') {
 			e.preventDefault();
+			nodeContextMenu = null;
 			if (contextMenu) {
 				contextMenu = null;
 			} else {
@@ -184,6 +228,7 @@
 			}
 		}
 		if (e.key === 'Escape') {
+			if (nodeContextMenu) { nodeContextMenu = null; return; }
 			if (selectedNodeId) { selectedNodeId = null; return; }
 			contextMenu = null;
 		}
@@ -315,6 +360,11 @@
 				snapGrid={[20, 20]}
 				defaultEdgeOptions={{ type: 'metro' }}
 				onnodeclick={({ node }) => { selectedNodeId = node.id; }}
+				onnodecontextmenu={({ event, node }) => {
+					event.preventDefault();
+					event.stopPropagation();
+					openNodeContextMenu(node.id, (event as MouseEvent).clientX, (event as MouseEvent).clientY);
+				}}
 				onpaneclick={() => { selectedNodeId = null; }}
 				onconnectstart={(_, params) => {
 					if (params.nodeId) {
@@ -442,6 +492,16 @@
 					</div>
 				</div>
 			{/if}
+
+			<NodeContextMenu
+				open={!!nodeContextMenu && !!nodeContextTarget}
+				x={nodeContextMenu?.x ?? 0}
+				y={nodeContextMenu?.y ?? 0}
+				node={nodeContextTarget}
+				ontoggleDisabled={() => nodeContextMenu && toggleNodeDisabled(nodeContextMenu.nodeId)}
+				ondelete={() => nodeContextMenu && deleteNode(nodeContextMenu.nodeId)}
+				onclose={() => { nodeContextMenu = null; }}
+			/>
 		</div>
 		{#if selectedNode}
 			<NodeConfigPanel
@@ -550,6 +610,11 @@
 			flex: 1;
 			position: relative;
 		}
+	}
+
+	:global(.svelte-flow .svelte-flow__node.nd-disabled) {
+		opacity: 0.5;
+		filter: grayscale(0.6);
 	}
 
 	:global(.svelte-flow .svelte-flow__handle) {

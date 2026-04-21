@@ -170,6 +170,10 @@ func (r *Registry) registerBuiltinTools() {
 		&builtinTool{name: "glob", desc: "Find files matching a pattern"},
 		&builtinTool{name: "grep", desc: "Search file contents"},
 		&builtinTool{name: "web_fetch", desc: "Fetch a URL"},
+		&builtinTool{
+			name: "brain",
+			desc: "Search, read, and write to your persistent memory. Actions: search (query your memory), read (get a specific file), write (create or update a file), list (list all files), delete (remove a file).",
+		},
 	}
 	for _, t := range builtins {
 		r.RegisterTool(t)

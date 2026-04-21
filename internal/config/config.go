@@ -25,6 +25,7 @@ type Config struct {
 	Auth      AuthConfig                `yaml:"auth"`
 	Storage   StorageConfig             `yaml:"storage"`
 	Telemetry TelemetryConfig           `yaml:"telemetry"`
+	Brain     BrainConfig               `yaml:"brain"`
 }
 
 // ServerConfig configures the gateway server.
@@ -83,6 +84,14 @@ type TelemetryConfig struct {
 	Traces       bool   `yaml:"traces"`
 }
 
+// BrainConfig configures the brain knowledge base feature.
+type BrainConfig struct {
+	EmbeddingProvider string `yaml:"embedding_provider"` // default provider for embeddings
+	EmbeddingModel    string `yaml:"embedding_model"`    // default model for embeddings
+	PostgresDSN       string `yaml:"postgres_dsn"`       // pgvector-enabled PostgreSQL DSN
+	DreamSchedule     string `yaml:"dream_schedule"`     // cron expression, default "0 2 * * *"
+}
+
 // Defaults returns a Config with sensible default values.
 func Defaults() *Config {
 	return &Config{
@@ -115,6 +124,9 @@ func Defaults() *Config {
 		Telemetry: TelemetryConfig{
 			Metrics: true,
 			Traces:  true,
+		},
+		Brain: BrainConfig{
+			DreamSchedule: "0 2 * * *",
 		},
 	}
 }
@@ -171,6 +183,9 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if v := os.Getenv("FORGEBOX_VM_MODE"); v != "" {
 		c.VM.Mode = v
+	}
+	if v := os.Getenv("FORGEBOX_BRAIN_POSTGRES_DSN"); v != "" {
+		c.Brain.PostgresDSN = v
 	}
 
 	// Provider API keys from environment.

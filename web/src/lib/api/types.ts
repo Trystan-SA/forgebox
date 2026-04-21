@@ -280,3 +280,82 @@ export interface SetupResponse {
 	email: string;
 	role: string;
 }
+
+// --- Brain ---
+
+export interface Brain {
+	id: string;
+	automation_id: string;
+	embedding_provider?: string;
+	embedding_model?: string;
+	embedding_dimension: number;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface BrainFile {
+	id: string;
+	brain_id: string;
+	title: string;
+	content: string;
+	cluster_id?: number;
+	created_at: string;
+	updated_at: string;
+	created_by: string;
+}
+
+export interface BrainFileWithMeta extends BrainFile {
+	hashtags: string[];
+	links: string[];
+	score?: number;
+}
+
+export interface BrainLink {
+	source_file_id: string;
+	target_file_id: string;
+}
+
+export interface GraphCluster {
+	id: number;
+	color: string;
+	label: string;
+}
+
+export interface GraphNode {
+	file_id: string;
+	title: string;
+	x: number;
+	y: number;
+	cluster_id: number;
+	hashtags: string[];
+}
+
+export interface BrainGraph {
+	brain_id: string;
+	clusters: GraphCluster[];
+	nodes: GraphNode[];
+	links: BrainLink[];
+	computed_at: string;
+}
+
+export type DreamProposalStatus = 'pending' | 'approved' | 'rejected';
+
+export interface DreamProposal {
+	id: string;
+	brain_id: string;
+	snapshot?: string;
+	changes: string;
+	summary: string;
+	status: DreamProposalStatus;
+	created_at: string;
+	resolved_at?: string;
+	resolved_by?: string;
+}
+
+export interface DreamChange {
+	action: 'create' | 'edit' | 'delete';
+	file_id?: string;
+	new_title?: string;
+	new_content?: string;
+	reason: string;
+}

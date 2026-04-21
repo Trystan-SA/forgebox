@@ -1,4 +1,3 @@
-// pkg/sdk/brain.go
 package sdk
 
 import (

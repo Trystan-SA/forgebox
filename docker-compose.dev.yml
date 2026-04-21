@@ -33,6 +33,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - FORGEBOX_FIRST_PASSWORD=${FORGEBOX_FIRST_PASSWORD:-}
+      - FORGEBOX_BRAIN_POSTGRES_DSN=postgres://forgebox:forgebox@postgres:5432/forgebox?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
@@ -63,7 +64,7 @@ services:
 
   # PostgreSQL (optional — backend defaults to SQLite)
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: forgebox
       POSTGRES_PASSWORD: forgebox

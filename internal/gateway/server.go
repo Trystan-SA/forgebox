@@ -22,6 +22,7 @@ import (
 	"encoding/hex"
 
 	"github.com/forgebox/forgebox/internal/auth"
+	"github.com/forgebox/forgebox/internal/brain"
 	"github.com/forgebox/forgebox/internal/engine"
 	"github.com/forgebox/forgebox/internal/plugins"
 	"github.com/forgebox/forgebox/internal/sessions"
@@ -37,27 +38,33 @@ type Config struct {
 	Sessions       *sessions.Manager
 	Registry       *plugins.Registry
 	Store          sdk.StoragePlugin
+	BrainService   *brain.Service
+	BrainStore     sdk.BrainStore
 }
 
 // Server is the main ForgeBox API server.
 type Server struct {
-	cfg      Config
-	mux      *http.ServeMux
-	engine   *engine.Engine
-	sessions *sessions.Manager
-	registry *plugins.Registry
-	store    sdk.StoragePlugin
+	cfg           Config
+	mux           *http.ServeMux
+	engine        *engine.Engine
+	sessions      *sessions.Manager
+	registry      *plugins.Registry
+	store         sdk.StoragePlugin
+	brainService  *brain.Service
+	brainStore    sdk.BrainStore
 }
 
 // New creates a new gateway server.
 func New(cfg Config) *Server {
 	s := &Server{
-		cfg:      cfg,
-		mux:      http.NewServeMux(),
-		engine:   cfg.Engine,
-		sessions: cfg.Sessions,
-		registry: cfg.Registry,
-		store:    cfg.Store,
+		cfg:           cfg,
+		mux:           http.NewServeMux(),
+		engine:        cfg.Engine,
+		sessions:      cfg.Sessions,
+		registry:      cfg.Registry,
+		store:         cfg.Store,
+		brainService:  cfg.BrainService,
+		brainStore:    cfg.BrainStore,
 	}
 	s.registerRoutes()
 	return s
@@ -161,6 +168,20 @@ func (s *Server) registerRoutes() {
 	// Discovery endpoints.
 	s.mux.HandleFunc("GET /api/v1/providers", s.handleListProviders)
 	s.mux.HandleFunc("GET /api/v1/tools", s.handleListTools)
+
+	// Brain endpoints.
+	s.mux.HandleFunc("GET /api/v1/agents/{id}/brain", s.handleGetBrain)
+	s.mux.HandleFunc("GET /api/v1/agents/{id}/brain/files", s.handleListBrainFiles)
+	s.mux.HandleFunc("POST /api/v1/agents/{id}/brain/files", s.handleCreateBrainFile)
+	s.mux.HandleFunc("GET /api/v1/agents/{id}/brain/files/{fid}", s.handleGetBrainFile)
+	s.mux.HandleFunc("PUT /api/v1/agents/{id}/brain/files/{fid}", s.handleUpdateBrainFile)
+	s.mux.HandleFunc("DELETE /api/v1/agents/{id}/brain/files/{fid}", s.handleDeleteBrainFile)
+	s.mux.HandleFunc("GET /api/v1/agents/{id}/brain/graph", s.handleGetBrainGraph)
+	s.mux.HandleFunc("POST /api/v1/agents/{id}/brain/search", s.handleSearchBrainFiles)
+	s.mux.HandleFunc("GET /api/v1/agents/{id}/brain/dreams", s.handleListDreamProposals)
+	s.mux.HandleFunc("GET /api/v1/agents/{id}/brain/dreams/{did}", s.handleGetDreamProposal)
+	s.mux.HandleFunc("POST /api/v1/agents/{id}/brain/dreams/{did}/approve", s.handleApproveDream)
+	s.mux.HandleFunc("POST /api/v1/agents/{id}/brain/dreams/{did}/reject", s.handleRejectDream)
 }
 
 // --- Handlers ---

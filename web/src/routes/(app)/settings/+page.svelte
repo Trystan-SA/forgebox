@@ -4,7 +4,7 @@
 	import type { Provider } from '$lib/api/types';
 	import { isTauri } from '$lib/platform';
 
-	let activeTab = $state<'general' | 'providers' | 'connection'>('general');
+	let activeTab = $state<'general' | 'connection'>('general');
 	let providers = $state<Provider[]>([]);
 	let loading = $state(true);
 	let backendUrl = $state('');
@@ -30,7 +30,6 @@
 
 	const tabs = $derived([
 		{ key: 'general' as const, label: 'General' },
-		{ key: 'providers' as const, label: 'Providers' },
 		...(showTauriSettings ? [{ key: 'connection' as const, label: 'Connection' }] : [])
 	]);
 </script>
@@ -66,9 +65,12 @@
 				</div>
 			</div>
 		</div>
-	{:else if activeTab === 'providers'}
+
 		<div class="section">
-			<h2>Available Providers</h2>
+			<div class="section__head">
+				<h2>Providers</h2>
+				<a href="/providers/new" class="btn-secondary">Add Provider</a>
+			</div>
 			{#if loading}
 				<p class="text-muted">Loading...</p>
 			{:else if providers.length === 0}
@@ -136,6 +138,15 @@
 
 	.section {
 		h2 { margin-bottom: $space-4; }
+
+		& + & { margin-top: $space-8; }
+
+		&__head {
+			@include flex-between;
+			margin-bottom: $space-4;
+
+			h2 { margin-bottom: 0; }
+		}
 	}
 
 	.settings-card { @include card; }

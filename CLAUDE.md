@@ -2,6 +2,34 @@
 
 This file provides context for AI coding assistants working on the ForgeBox codebase.
 
+## Product Specifications (MANDATORY)
+
+All domain rules and features live in `/specs/`. Specs are the source of truth for what
+the product does and how each feature must behave.
+
+**File conventions:**
+- Each spec file is a top-level **major chapter** (`X.x.x`) — e.g. `1.0.0-agents.md`,
+  `2.0.0-brain.md`. One feature domain per file.
+- **Inside** a file, headings use semantic versioning to describe the feature:
+  - `## X.Y.0 — Minor` for each sub-capability of the feature.
+  - `### X.Y.Z — Patch` for each rule, behavior, or refinement under that capability.
+
+**Workflow — this is non-negotiable:**
+1. Before implementing any change or new feature, **read the relevant spec files in
+   `/specs/`** to confirm the current product rules.
+2. If the spec already covers the work, implement strictly to spec. Do not invent
+   behavior not in the spec.
+3. If the work introduces new behavior or changes existing behavior:
+   - **Update the matching spec file** (bump minor/patch headings accordingly), or
+   - **Create a new spec file** for a new major chapter if the feature is new.
+4. Ship spec updates in the same commit as the code change. Code without a matching
+   spec update is incomplete.
+5. When reviewing your own work before declaring it done, re-check the spec to
+   confirm the implementation respects every rule it defines.
+
+If `/specs/` does not yet exist or is missing a chapter relevant to the work, create
+it as part of the change.
+
 ## Project Overview
 
 ForgeBox is an open-source AI automation platform written in Go. It runs AI-generated

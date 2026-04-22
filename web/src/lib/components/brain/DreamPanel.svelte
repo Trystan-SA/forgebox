@@ -398,7 +398,7 @@
 			border-radius: $radius-md;
 			border: 1px solid $neutral-200;
 
-			&:hover { background: $error-50; color: $error-700; border-color: $error-200; }
+			&:hover { background: $error-50; color: $error-700; border-color: $error-100; }
 		}
 	}
 

@@ -8,12 +8,21 @@ import (
 	"github.com/forgebox/forgebox/pkg/sdk"
 )
 
-func (s *Server) handleGetBrain(w http.ResponseWriter, r *http.Request) {
-	agentID := r.PathValue("id")
-	if s.brainService == nil {
+// brainUnavailable reports whether the brain feature is disabled (no PostgreSQL
+// DSN configured). Handlers call this first and short-circuit with 503.
+func (s *Server) brainUnavailable(w http.ResponseWriter) bool {
+	if s.brainService == nil || s.brainStore == nil {
 		writeError(w, http.StatusServiceUnavailable, "brain feature not configured")
+		return true
+	}
+	return false
+}
+
+func (s *Server) handleGetBrain(w http.ResponseWriter, r *http.Request) {
+	if s.brainUnavailable(w) {
 		return
 	}
+	agentID := r.PathValue("id")
 	brain, err := s.brainService.GetOrCreateBrain(r.Context(), agentID)
 	if err != nil {
 		slog.Error("failed to get brain", "error", err)
@@ -24,6 +33,9 @@ func (s *Server) handleGetBrain(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListBrainFiles(w http.ResponseWriter, r *http.Request) {
+	if s.brainUnavailable(w) {
+		return
+	}
 	agentID := r.PathValue("id")
 	brain, err := s.brainService.GetOrCreateBrain(r.Context(), agentID)
 	if err != nil {
@@ -43,6 +55,9 @@ func (s *Server) handleListBrainFiles(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateBrainFile(w http.ResponseWriter, r *http.Request) {
+	if s.brainUnavailable(w) {
+		return
+	}
 	agentID := r.PathValue("id")
 	var req struct {
 		Title   string `json:"title"`
@@ -73,6 +88,9 @@ func (s *Server) handleCreateBrainFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetBrainFile(w http.ResponseWriter, r *http.Request) {
+	if s.brainUnavailable(w) {
+		return
+	}
 	fileID := r.PathValue("fid")
 	file, err := s.brainStore.GetFile(r.Context(), fileID)
 	if err != nil {
@@ -83,6 +101,9 @@ func (s *Server) handleGetBrainFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateBrainFile(w http.ResponseWriter, r *http.Request) {
+	if s.brainUnavailable(w) {
+		return
+	}
 	fileID := r.PathValue("fid")
 	var req struct {
 		Title   *string `json:"title,omitempty"`
@@ -118,6 +139,9 @@ func (s *Server) handleUpdateBrainFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteBrainFile(w http.ResponseWriter, r *http.Request) {
+	if s.brainUnavailable(w) {
+		return
+	}
 	fileID := r.PathValue("fid")
 	if err := s.brainStore.DeleteFile(r.Context(), fileID); err != nil {
 		slog.Error("failed to delete brain file", "error", err)
@@ -128,6 +152,9 @@ func (s *Server) handleDeleteBrainFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetBrainGraph(w http.ResponseWriter, r *http.Request) {
+	if s.brainUnavailable(w) {
+		return
+	}
 	agentID := r.PathValue("id")
 	brain, err := s.brainService.GetOrCreateBrain(r.Context(), agentID)
 	if err != nil {
@@ -148,6 +175,9 @@ func (s *Server) handleGetBrainGraph(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSearchBrainFiles(w http.ResponseWriter, r *http.Request) {
+	if s.brainUnavailable(w) {
+		return
+	}
 	agentID := r.PathValue("id")
 	var req struct {
 		Query string `json:"query"`
@@ -184,6 +214,9 @@ func (s *Server) handleSearchBrainFiles(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleListDreamProposals(w http.ResponseWriter, r *http.Request) {
+	if s.brainUnavailable(w) {
+		return
+	}
 	agentID := r.PathValue("id")
 	brain, err := s.brainService.GetOrCreateBrain(r.Context(), agentID)
 	if err != nil {
@@ -203,6 +236,9 @@ func (s *Server) handleListDreamProposals(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleGetDreamProposal(w http.ResponseWriter, r *http.Request) {
+	if s.brainUnavailable(w) {
+		return
+	}
 	did := r.PathValue("did")
 	proposal, err := s.brainStore.GetDreamProposal(r.Context(), did)
 	if err != nil {
@@ -213,6 +249,9 @@ func (s *Server) handleGetDreamProposal(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleApproveDream(w http.ResponseWriter, r *http.Request) {
+	if s.brainUnavailable(w) {
+		return
+	}
 	did := r.PathValue("did")
 	proposal, err := s.brainStore.GetDreamProposal(r.Context(), did)
 	if err != nil {
@@ -256,6 +295,9 @@ func (s *Server) handleApproveDream(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRejectDream(w http.ResponseWriter, r *http.Request) {
+	if s.brainUnavailable(w) {
+		return
+	}
 	did := r.PathValue("did")
 	if err := s.brainStore.UpdateDreamProposalStatus(r.Context(), did, sdk.DreamRejected, getUserID(r)); err != nil {
 		slog.Error("failed to reject dream", "error", err)

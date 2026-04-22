@@ -66,7 +66,7 @@
 			</div>
 		</div>
 
-		<div class="section">
+		<div class="section" class:section--alert={!loading && providers.length === 0}>
 			<div class="section__head">
 				<h2>Providers</h2>
 				<a href="/providers/new" class="btn-secondary">Add Provider</a>
@@ -74,7 +74,7 @@
 			{#if loading}
 				<p class="text-muted">Loading...</p>
 			{:else if providers.length === 0}
-				<p class="text-muted">No providers configured.</p>
+				<p class="section__alert">Must add at least one provider</p>
 			{:else}
 				<div class="provider-grid">
 					{#each providers as p}
@@ -146,6 +146,21 @@
 			margin-bottom: $space-4;
 
 			h2 { margin-bottom: 0; }
+		}
+
+		&--alert {
+			padding: $space-5;
+			background: $error-50;
+			border: 1px solid $error-100;
+			border-radius: $radius-lg;
+
+			h2 { color: $error-700; }
+		}
+
+		&__alert {
+			font-size: $text-sm;
+			font-weight: $font-medium;
+			color: $error-700;
 		}
 	}
 

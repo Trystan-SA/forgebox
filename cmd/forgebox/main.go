@@ -101,41 +101,39 @@ func cmdServe() {
 	if cfg.Brain.PostgresDSN != "" {
 		brainDB, err := postgres.New(cfg.Brain.PostgresDSN)
 		if err != nil {
-			slog.Error("failed to init brain storage", "error", err)
-			os.Exit(1)
-		}
-		defer brainDB.Close()
-
-		embeddingProvider := cfg.Brain.EmbeddingProvider
-		embeddingModel := cfg.Brain.EmbeddingModel
-		if embeddingModel == "" {
-			embeddingModel = "text-embedding-3-small"
-		}
-		if embeddingProvider == "" {
-			embeddingProvider = "openai"
-		}
-
-		var apiKey string
-		if provCfg, ok := cfg.Providers[embeddingProvider]; ok {
-			if key, ok := provCfg["api_key"].(string); ok {
-				apiKey = key
-			}
-		}
-
-		var embedder brain.Embedder
-		if apiKey != "" {
-			embedder = brain.NewOpenAIEmbedder(apiKey, embeddingModel)
-			slog.Info("brain embedder configured", "provider", embeddingProvider, "model", embeddingModel)
+			slog.Warn("brain feature unavailable — postgres unreachable", "error", err)
 		} else {
-			slog.Warn("brain: no embedding API key found, using mock embedder")
-			embedder = brain.NewMockEmbedder(1536)
-		}
+			defer brainDB.Close()
 
-		brainStore = brainDB
-		brainSvc = brain.NewService(brainDB, embedder)
-		slog.Info("brain feature enabled")
-	} else {
-		slog.Info("brain feature disabled (no FORGEBOX_BRAIN_POSTGRES_DSN)")
+			embeddingProvider := cfg.Brain.EmbeddingProvider
+			embeddingModel := cfg.Brain.EmbeddingModel
+			if embeddingModel == "" {
+				embeddingModel = "text-embedding-3-small"
+			}
+			if embeddingProvider == "" {
+				embeddingProvider = "openai"
+			}
+
+			var apiKey string
+			if provCfg, ok := cfg.Providers[embeddingProvider]; ok {
+				if key, ok := provCfg["api_key"].(string); ok {
+					apiKey = key
+				}
+			}
+
+			var embedder brain.Embedder
+			if apiKey != "" {
+				embedder = brain.NewOpenAIEmbedder(apiKey, embeddingModel)
+				slog.Info("brain embedder configured", "provider", embeddingProvider, "model", embeddingModel)
+			} else {
+				slog.Warn("brain: no embedding API key found, using mock embedder")
+				embedder = brain.NewMockEmbedder(1536)
+			}
+
+			brainStore = brainDB
+			brainSvc = brain.NewService(brainDB, embedder)
+			slog.Info("brain feature enabled")
+		}
 	}
 
 	orch, err := vm.NewOrchestrator(cfg.VM)

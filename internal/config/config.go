@@ -1,11 +1,11 @@
 // Package config handles configuration loading and validation.
 //
 // ForgeBox uses a layered configuration system:
-//   1. Built-in defaults
-//   2. /etc/forgebox/forgebox.yaml (system)
-//   3. ./forgebox.yaml (project)
-//   4. Environment variables (FORGEBOX_*)
-//   5. CLI flags
+//  1. Built-in defaults
+//  2. /etc/forgebox/forgebox.yaml (system)
+//  3. ./forgebox.yaml (project)
+//  4. Environment variables (FORGEBOX_*)
+//  5. CLI flags
 package config
 
 import (
@@ -25,6 +25,7 @@ type Config struct {
 	Auth      AuthConfig                `yaml:"auth"`
 	Storage   StorageConfig             `yaml:"storage"`
 	Telemetry TelemetryConfig           `yaml:"telemetry"`
+	Brain     BrainConfig               `yaml:"brain"`
 }
 
 // ServerConfig configures the gateway server.
@@ -35,15 +36,15 @@ type ServerConfig struct {
 
 // VMConfig configures the Firecracker VM orchestrator.
 type VMConfig struct {
-	Mode           string        `yaml:"mode"`            // "local" (dev, no VMs) or "firecracker" (production)
-	FirecrackerBin string        `yaml:"firecracker_bin"`
-	Kernel         string        `yaml:"kernel"`
-	Rootfs         string        `yaml:"rootfs"`
-	PoolSize       int           `yaml:"pool_size"`
-	DefaultMemoryMB int          `yaml:"default_memory_mb"`
-	DefaultVCPUs   int           `yaml:"default_vcpus"`
-	DefaultTimeout time.Duration `yaml:"default_timeout"`
-	NetworkAccess  bool          `yaml:"network_access"`
+	Mode            string        `yaml:"mode"` // "local" (dev, no VMs) or "firecracker" (production)
+	FirecrackerBin  string        `yaml:"firecracker_bin"`
+	Kernel          string        `yaml:"kernel"`
+	Rootfs          string        `yaml:"rootfs"`
+	PoolSize        int           `yaml:"pool_size"`
+	DefaultMemoryMB int           `yaml:"default_memory_mb"`
+	DefaultVCPUs    int           `yaml:"default_vcpus"`
+	DefaultTimeout  time.Duration `yaml:"default_timeout"`
+	NetworkAccess   bool          `yaml:"network_access"`
 }
 
 // AuthConfig configures authentication and authorization.
@@ -83,6 +84,14 @@ type TelemetryConfig struct {
 	Traces       bool   `yaml:"traces"`
 }
 
+// BrainConfig configures the brain knowledge base feature.
+type BrainConfig struct {
+	EmbeddingProvider string `yaml:"embedding_provider"` // default provider for embeddings
+	EmbeddingModel    string `yaml:"embedding_model"`    // default model for embeddings
+	PostgresDSN       string `yaml:"postgres_dsn"`       // pgvector-enabled PostgreSQL DSN
+	DreamSchedule     string `yaml:"dream_schedule"`     // cron expression, default "0 2 * * *"
+}
+
 // Defaults returns a Config with sensible default values.
 func Defaults() *Config {
 	return &Config{
@@ -91,15 +100,15 @@ func Defaults() *Config {
 			GRPCListen: ":8421",
 		},
 		VM: VMConfig{
-			Mode:           "local",
-			FirecrackerBin: "/usr/bin/firecracker",
-			Kernel:         "/var/lib/forgebox/vmlinux",
-			Rootfs:         "/var/lib/forgebox/rootfs.ext4",
-			PoolSize:       5,
+			Mode:            "local",
+			FirecrackerBin:  "/usr/bin/firecracker",
+			Kernel:          "/var/lib/forgebox/vmlinux",
+			Rootfs:          "/var/lib/forgebox/rootfs.ext4",
+			PoolSize:        5,
 			DefaultMemoryMB: 512,
-			DefaultVCPUs:   2,
-			DefaultTimeout: 5 * time.Minute,
-			NetworkAccess:  false,
+			DefaultVCPUs:    2,
+			DefaultTimeout:  5 * time.Minute,
+			NetworkAccess:   false,
 		},
 		Providers: make(map[string]map[string]any),
 		Channels:  make(map[string]map[string]any),
@@ -115,6 +124,10 @@ func Defaults() *Config {
 		Telemetry: TelemetryConfig{
 			Metrics: true,
 			Traces:  true,
+		},
+		Brain: BrainConfig{
+			PostgresDSN:   "postgres://forgebox:forgebox@postgres:5432/forgebox?sslmode=disable",
+			DreamSchedule: "0 2 * * *",
 		},
 	}
 }
@@ -172,12 +185,15 @@ func (c *Config) applyEnvOverrides() {
 	if v := os.Getenv("FORGEBOX_VM_MODE"); v != "" {
 		c.VM.Mode = v
 	}
+	if v := os.Getenv("FORGEBOX_BRAIN_POSTGRES_DSN"); v != "" {
+		c.Brain.PostgresDSN = v
+	}
 
 	// Provider API keys from environment.
 	envProviders := map[string]string{
-		"anthropic":  "ANTHROPIC_API_KEY",
-		"openai":     "OPENAI_API_KEY",
-		"google":     "GOOGLE_API_KEY",
+		"anthropic": "ANTHROPIC_API_KEY",
+		"openai":    "OPENAI_API_KEY",
+		"google":    "GOOGLE_API_KEY",
 	}
 	for name, envKey := range envProviders {
 		if v := os.Getenv(envKey); v != "" {

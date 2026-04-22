@@ -9,15 +9,18 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/forgebox/forgebox/internal/brain"
 	"github.com/forgebox/forgebox/internal/config"
 	"github.com/forgebox/forgebox/internal/engine"
 	"github.com/forgebox/forgebox/internal/gateway"
 	"github.com/forgebox/forgebox/internal/permissions"
 	"github.com/forgebox/forgebox/internal/plugins"
 	"github.com/forgebox/forgebox/internal/sessions"
+	"github.com/forgebox/forgebox/internal/storage/postgres"
 	"github.com/forgebox/forgebox/internal/storage/sqlite"
 	"github.com/forgebox/forgebox/internal/telemetry"
 	"github.com/forgebox/forgebox/internal/vm"
+	"github.com/forgebox/forgebox/pkg/sdk"
 )
 
 var (
@@ -92,6 +95,47 @@ func cmdServe() {
 		os.Exit(1)
 	}
 
+	// Initialize brain storage (PostgreSQL with pgvector).
+	var brainSvc *brain.Service
+	var brainStore sdk.BrainStore
+	if cfg.Brain.PostgresDSN != "" {
+		brainDB, err := postgres.New(cfg.Brain.PostgresDSN)
+		if err != nil {
+			slog.Warn("brain feature unavailable — postgres unreachable", "error", err)
+		} else {
+			defer brainDB.Close()
+
+			embeddingProvider := cfg.Brain.EmbeddingProvider
+			embeddingModel := cfg.Brain.EmbeddingModel
+			if embeddingModel == "" {
+				embeddingModel = "text-embedding-3-small"
+			}
+			if embeddingProvider == "" {
+				embeddingProvider = "openai"
+			}
+
+			var apiKey string
+			if provCfg, ok := cfg.Providers[embeddingProvider]; ok {
+				if key, ok := provCfg["api_key"].(string); ok {
+					apiKey = key
+				}
+			}
+
+			var embedder brain.Embedder
+			if apiKey != "" {
+				embedder = brain.NewOpenAIEmbedder(apiKey, embeddingModel)
+				slog.Info("brain embedder configured", "provider", embeddingProvider, "model", embeddingModel)
+			} else {
+				slog.Warn("brain: no embedding API key found, using mock embedder")
+				embedder = brain.NewMockEmbedder(1536)
+			}
+
+			brainStore = brainDB
+			brainSvc = brain.NewService(brainDB, embedder)
+			slog.Info("brain feature enabled")
+		}
+	}
+
 	orch, err := vm.NewOrchestrator(cfg.VM)
 	if err != nil {
 		slog.Error("failed to init VM orchestrator", "error", err)
@@ -116,6 +160,8 @@ func cmdServe() {
 		Sessions:       sessionMgr,
 		Registry:       registry,
 		Store:          store,
+		BrainService:   brainSvc,
+		BrainStore:     brainStore,
 	})
 
 	slog.Info("starting ForgeBox",

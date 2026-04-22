@@ -1,5 +1,7 @@
 # Binaries
 bin/
+/forgebox
+/fb-agent
 *.exe
 *.exe~
 *.dll
@@ -57,3 +59,6 @@ data/
 web/node_modules/
 web/.svelte-kit/
 web/build/
+
+# Superpowers working docs (local only)
+docs/superpowers/

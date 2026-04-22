@@ -363,7 +363,7 @@
 			&--active {
 				background: $warning-50;
 				color: $warning-700;
-				border-color: $warning-200;
+				border-color: $warning-100;
 			}
 		}
 

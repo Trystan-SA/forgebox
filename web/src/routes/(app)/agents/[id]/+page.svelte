@@ -96,10 +96,19 @@
 			<a href="/agents" class="cr__back">
 				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6" /></svg>
 			</a>
-			<div>
+			<div class="cr__top-main">
 				<h1 class="cr__title">Edit Agent</h1>
 				<p class="cr__sub">Update this agent's configuration.</p>
 			</div>
+			<a href="/agents/{agentId}/brain" class="cr__brain">
+				<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M9.5 2a4.5 4.5 0 0 0-4.5 4.5v0A3.5 3.5 0 0 0 3 10v0a3.5 3.5 0 0 0 2 3.16V15a4 4 0 0 0 4 4h.5" />
+					<path d="M14.5 2a4.5 4.5 0 0 1 4.5 4.5v0A3.5 3.5 0 0 1 21 10v0a3.5 3.5 0 0 1-2 3.16V15a4 4 0 0 1-4 4h-.5" />
+					<path d="M9.5 2v20" />
+					<path d="M14.5 2v20" />
+				</svg>
+				Brain
+			</a>
 		</div>
 
 		{#if error}
@@ -289,6 +298,31 @@
 			align-items: flex-start;
 			gap: $space-3;
 			margin-bottom: $space-6;
+		}
+
+		&__top-main {
+			flex: 1;
+			min-width: 0;
+		}
+
+		&__brain {
+			display: inline-flex;
+			align-items: center;
+			gap: $space-2;
+			padding: $space-2 $space-3;
+			font-size: $text-sm;
+			font-weight: $font-medium;
+			color: $neutral-700;
+			background: $neutral-50;
+			border: 1px solid $neutral-200;
+			border-radius: $radius-lg;
+			transition: all $transition-fast;
+
+			&:hover {
+				background: $neutral-100;
+				border-color: $neutral-300;
+				color: $neutral-900;
+			}
 		}
 
 		&__back {

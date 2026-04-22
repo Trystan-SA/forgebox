@@ -20,14 +20,14 @@
 
 		debounceTimer = setTimeout(async () => {
 			await brain.search(query);
-			isOpen = brain.searchResults.length > 0;
-			dispatch('highlight', { fileIds: brain.searchResults.map((r) => r.id) });
+			isOpen = brain.state.searchResults.length > 0;
+			dispatch('highlight', { fileIds: brain.state.searchResults.map((r) => r.id) });
 		}, 300);
 	}
 
 	function handleSelectResult(fileId: string) {
 		brain.selectFile(fileId);
-		dispatch('highlight', { fileIds: brain.searchResults.map((r) => r.id) });
+		dispatch('highlight', { fileIds: brain.state.searchResults.map((r) => r.id) });
 		isOpen = false;
 	}
 
@@ -60,7 +60,7 @@
 			placeholder="Search brain..."
 			bind:value={query}
 			oninput={handleInput}
-			onfocus={() => { if (brain.searchResults.length > 0) isOpen = true; }}
+			onfocus={() => { if (brain.state.searchResults.length > 0) isOpen = true; }}
 			onblur={handleBlur}
 		/>
 		{#if query}
@@ -73,9 +73,9 @@
 		{/if}
 	</div>
 
-	{#if isOpen && brain.searchResults.length > 0}
+	{#if isOpen && brain.state.searchResults.length > 0}
 		<div class="brain-search__dropdown">
-			{#each brain.searchResults as result}
+			{#each brain.state.searchResults as result}
 				<button
 					type="button"
 					class="brain-search__result"

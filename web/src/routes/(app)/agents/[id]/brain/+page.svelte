@@ -30,27 +30,27 @@
 	});
 
 	async function handleSave(e: CustomEvent<{ title: string; content: string }>) {
-		if (!brain.selectedFileId) return;
+		if (!brain.state.selectedFileId) return;
 		try {
-			await brain.updateFile(brain.selectedFileId, e.detail.title, e.detail.content);
+			await brain.updateFile(brain.state.selectedFileId, e.detail.title, e.detail.content);
 		} catch (err) {
 			console.error('Save failed:', err);
 		}
 	}
 
 	async function handleDelete() {
-		if (!brain.selectedFileId) return;
+		if (!brain.state.selectedFileId) return;
 		try {
-			await brain.deleteFile(brain.selectedFileId);
+			await brain.deleteFile(brain.state.selectedFileId);
 		} catch (err) {
 			console.error('Delete failed:', err);
 		}
 	}
 
 	async function handleTitleChange(e: CustomEvent<string>) {
-		if (!brain.selectedFileId || !brain.selectedFile) return;
+		if (!brain.state.selectedFileId || !brain.state.selectedFile) return;
 		try {
-			await brain.updateFile(brain.selectedFileId, e.detail, brain.selectedFile.content ?? '');
+			await brain.updateFile(brain.state.selectedFileId, e.detail, brain.state.selectedFile.content ?? '');
 		} catch (err) {
 			console.error('Title update failed:', err);
 		}
@@ -112,12 +112,12 @@
 	}
 
 	const pendingDreamCount = $derived(
-		brain.dreamProposals.filter((d) => d.status === 'pending').length
+		brain.state.dreamProposals.filter((d) => d.status === 'pending').length
 	);
 
 	const allHashtags = $derived(() => {
 		const set = new Set<string>();
-		(brain.files as BrainFileWithMeta[]).forEach((f) => {
+		(brain.state.files as BrainFileWithMeta[]).forEach((f) => {
 			if ('hashtags' in f && Array.isArray((f as BrainFileWithMeta).hashtags)) {
 				(f as BrainFileWithMeta).hashtags.forEach((h) => set.add(h));
 			}
@@ -126,8 +126,8 @@
 	});
 
 	const selectedFileHashtags = $derived(() => {
-		if (!brain.selectedFile) return [];
-		const f = brain.files.find((x) => x.id === brain.selectedFileId);
+		if (!brain.state.selectedFile) return [];
+		const f = brain.state.files.find((x) => x.id === brain.state.selectedFileId);
 		if (!f) return [];
 		if ('hashtags' in f && Array.isArray((f as BrainFileWithMeta).hashtags)) {
 			return (f as BrainFileWithMeta).hashtags;
@@ -180,7 +180,7 @@
 		</div>
 	</div>
 
-	{#if brain.loading}
+	{#if brain.state.loading}
 		<div class="bp__loading">
 			<Spinner size="md" />
 			<span>Loading brain...</span>
@@ -190,7 +190,7 @@
 			<p>{loadError}</p>
 			<button type="button" class="bp__btn-retry" onclick={() => brain.loadBrain(agentId)}>Retry</button>
 		</div>
-	{:else if brain.files.length === 0}
+	{:else if brain.state.files.length === 0}
 		<div class="bp__empty">
 			<EmptyState
 				title="No brain files yet"
@@ -207,25 +207,25 @@
 		<div class="bp__main">
 			<div class="bp__graph-pane">
 				<BrainGraph
-					graph={brain.graph}
-					selectedFileId={brain.selectedFileId}
+					graph={brain.state.graph}
+					selectedFileId={brain.state.selectedFileId}
 					{searchHighlights}
 					on:select={handleGraphSelect}
 				/>
 			</div>
 
 			<div class="bp__editor-pane">
-				{#if brain.selectedFile}
+				{#if brain.state.selectedFile}
 					<div class="bp__editor-wrap">
 						<BrainEditor
-							file={brain.selectedFile}
-							allFiles={brain.files}
+							file={brain.state.selectedFile}
+							allFiles={brain.state.files}
 							allHashtags={allHashtags()}
 							on:save={handleSave}
 							on:delete={handleDelete}
 						/>
 						<BrainFileMeta
-							file={brain.selectedFile}
+							file={brain.state.selectedFile}
 							hashtags={selectedFileHashtags()}
 							on:titleChange={handleTitleChange}
 						/>
@@ -243,7 +243,7 @@
 	{/if}
 
 	<DreamPanel
-		proposals={brain.dreamProposals}
+		proposals={brain.state.dreamProposals}
 		open={dreamPanelOpen}
 		on:approve={handleApproveDream}
 		on:reject={handleRejectDream}

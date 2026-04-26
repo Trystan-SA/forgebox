@@ -31,8 +31,7 @@ func NewService(store sdk.BrainStore, embedder Embedder) *Service {
 }
 
 // scheduleGraphRecompute recomputes the graph synchronously so the persisted
-// view stays consistent with the latest mutation. Recompute cost is O(files)
-// per brain and runs on the request path.
+// view stays consistent with the latest mutation.
 func (s *Service) scheduleGraphRecompute(brainID string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -104,6 +103,15 @@ func (s *Service) CreateFile(ctx context.Context, brainID, title, content, creat
 
 // UpdateFile updates a brain file, re-extracts links/hashtags, and re-embeds.
 func (s *Service) UpdateFile(ctx context.Context, fileID, title, content string) (*sdk.BrainFile, error) {
+	file, err := s.updateFileNoRecompute(ctx, fileID, title, content)
+	if err != nil {
+		return nil, err
+	}
+	s.scheduleGraphRecompute(file.BrainID)
+	return file, nil
+}
+
+func (s *Service) updateFileNoRecompute(ctx context.Context, fileID, title, content string) (*sdk.BrainFile, error) {
 	file, err := s.store.GetFile(ctx, fileID)
 	if err != nil {
 		return nil, fmt.Errorf("get file: %w", err)
@@ -133,7 +141,6 @@ func (s *Service) UpdateFile(ctx context.Context, fileID, title, content string)
 		slog.Warn("failed to save links", "error", err, "file_id", file.ID)
 	}
 
-	s.scheduleGraphRecompute(file.BrainID)
 	return file, nil
 }
 
@@ -192,7 +199,7 @@ func (s *Service) removeLinkReferences(ctx context.Context, brainID, title strin
 		}
 		newContent := pattern.ReplaceAllString(sibling.Content, "")
 		newContent = strings.TrimSpace(newContent)
-		if _, err := s.UpdateFile(ctx, sibling.ID, sibling.Title, newContent); err != nil {
+		if _, err := s.updateFileNoRecompute(ctx, sibling.ID, sibling.Title, newContent); err != nil {
 			return fmt.Errorf("update sibling %s: %w", sibling.ID, err)
 		}
 	}

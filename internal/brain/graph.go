@@ -25,12 +25,11 @@ func (s *Service) ComputeGraph(ctx context.Context, brainID string) (*sdk.BrainG
 		return nil, fmt.Errorf("list files: %w", err)
 	}
 
+	// Hashtags are deterministic from content, so derive them in-process
+	// instead of doing one store round-trip per file.
 	fileTags := make(map[string][]string, len(files))
 	for _, f := range files {
-		tags, err := s.store.GetFileHashtags(ctx, f.ID)
-		if err == nil {
-			fileTags[f.ID] = tags
-		}
+		fileTags[f.ID] = ExtractHashtags(f.Content)
 	}
 
 	var (

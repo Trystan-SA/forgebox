@@ -1,8 +1,13 @@
 <script lang="ts">
-	import { onMount, onDestroy, createEventDispatcher, untrack } from 'svelte';
-	import type { SimulationNodeDatum } from 'd3-force';
+	import { onMount, onDestroy, createEventDispatcher } from 'svelte';
+	import {
+		forceSimulation,
+		forceManyBody,
+		forceLink,
+		type Simulation,
+		type SimulationNodeDatum
+	} from 'd3-force';
 	import type { BrainGraph, GraphNode, BrainLink, GraphCluster } from '$lib/api/types';
-	import { GraphLayout } from './graph-layout';
 
 	interface Props {
 		graph: BrainGraph | null;
@@ -31,20 +36,23 @@
 		y: number;
 	}
 
-	// Links store node IDs only — actual node lookups happen through `simNodes`
-	// so the line endpoints share the same reactive proxy as the dragged node.
 	interface SimLink {
 		sourceId: string;
 		targetId: string;
 	}
 
-	// Shallow reactivity: reassigning the array (when the graph data changes)
-	// fires a signal so the templates re-render, but mutating an element's
-	// .x/.y during drag or layout does NOT — those updates go straight to the
-	// DOM via setAttribute, without triggering reactive churn.
+	// d3-force mutates link.source/link.target into node references after the
+	// first tick, so we keep a separate array just for the simulation and don't
+	// touch our SimLink objects (which the template indexes by sourceId/targetId).
+	type ForceLink = { source: string | SimNode; target: string | SimNode };
+
+	// Reassigning these arrays signals the templates; per-element mutations
+	// of .x/.y during drag or layout bypass reactivity and go straight to
+	// the DOM via setAttribute.
 	let simNodes = $state.raw<SimNode[]>([]);
 	let simLinks = $state.raw<SimLink[]>([]);
 
+	const nodeById = new Map<string, SimNode>();
 
 	function clusterColor(clusterId: number): string {
 		if (!graph) return '#6366f1';
@@ -52,10 +60,7 @@
 		return cluster?.color ?? '#6366f1';
 	}
 
-	// Builds the static graph: nodes positioned at server-provided coordinates,
-	// links resolved to direct node references. No automatic force-based
-	// motion — positions only change when the user drags.
-	function buildSimulation(g: BrainGraph) {
+	function buildSimulation(g: BrainGraph): { nodes: SimNode[]; links: SimLink[] } {
 		const nodes: SimNode[] = g.nodes.map((n: GraphNode) => ({
 			id: n.file_id,
 			title: n.title,
@@ -76,6 +81,9 @@
 
 		simNodes = nodes;
 		simLinks = links;
+		nodeById.clear();
+		for (const n of nodes) nodeById.set(n.id, n);
+		return { nodes, links };
 	}
 
 	function resizeObserver() {
@@ -95,7 +103,7 @@
 
 	onDestroy(() => {
 		if (ro) ro.disconnect();
-		cancelLayout();
+		simulation?.stop();
 		window.removeEventListener('pointermove', handleWindowPointerMove);
 		window.removeEventListener('pointerup', handleWindowPointerUp);
 		window.removeEventListener('pointercancel', handleWindowPointerUp);
@@ -104,30 +112,41 @@
 		window.removeEventListener('pointercancel', handlePanPointerUp);
 	});
 
+	// Rebuild only when the graph data itself changes — not on every resize,
+	// which would otherwise reset positions while the user is dragging.
+	// startLayout is called with the freshly-built arrays directly so the
+	// effect doesn't read simNodes/simLinks (which it just wrote) — that
+	// would self-trigger and exceed Svelte's update-depth guard.
 	$effect(() => {
-		// Rebuild only when the graph data itself changes — not on every resize,
-		// which would otherwise reset positions while the user is dragging.
 		if (graph && graph.nodes.length > 0) {
-			buildSimulation(graph);
-			untrack(() => startLayout());
+			const { nodes, links } = buildSimulation(graph);
+			startLayout(nodes, links);
 		} else {
-			untrack(() => cancelLayout());
+			simulation?.stop();
+			simulation = null;
 			simNodes = [];
 			simLinks = [];
+			nodeById.clear();
 		}
 	});
 
-	// Force-directed layout engine — see graph-layout.ts.
-	const layout = new GraphLayout();
-	layout.onTick(() => applyAllPositions());
+	let simulation: Simulation<SimNode, ForceLink> | null = null;
 
-	function startLayout() {
-		layout.setData(simNodes, simLinks);
-		layout.start();
-	}
-
-	function cancelLayout() {
-		layout.cancel();
+	function startLayout(nodes: SimNode[], links: SimLink[]) {
+		simulation?.stop();
+		if (nodes.length < 2) return;
+		const forceLinks: ForceLink[] = links.map((l) => ({ source: l.sourceId, target: l.targetId }));
+		simulation = forceSimulation<SimNode, ForceLink>(nodes)
+			.force('charge', forceManyBody<SimNode>().strength(-200).distanceMax(160))
+			.force(
+				'link',
+				forceLink<SimNode, ForceLink>(forceLinks)
+					.id((d) => d.id)
+					.distance(90)
+					.strength(0.18)
+			)
+			.alphaMin(0.04)
+			.on('tick', applyAllPositions);
 	}
 
 	function handleNodeClick(node: SimNode) {
@@ -174,7 +193,7 @@
 		if (e.button !== 0) return;
 		e.preventDefault();
 		// Stop any running auto-layout so it doesn't fight the user.
-		cancelLayout();
+		simulation?.stop();
 		const p = svgPoint(e.clientX, e.clientY);
 		dragState = { node, pointerId: e.pointerId, startX: p.x, startY: p.y, moved: false };
 		// Attach listeners on window so re-renders don't lose them.
@@ -193,8 +212,6 @@
 				dragState.moved = true;
 			}
 		}
-		// simNodes is non-reactive now, so mutating directly doesn't fire
-		// signals. We update the DOM manually via setAttribute below.
 		dragState.node.x = p.x;
 		dragState.node.y = p.y;
 		applyNodePosition(dragState.node);
@@ -212,10 +229,12 @@
 		if (!moved) {
 			handleNodeClick(node);
 		} else {
-			// Pin the manually placed node so the upcoming layout pass settles
-			// the rest of the graph around it instead of pulling it back.
-			layout.setPinned(node.id, true);
-			startLayout();
+			// Pin the manually placed node (d3 holds nodes at fx/fy) so the
+			// upcoming layout pass settles the rest of the graph around it
+			// instead of pulling it back.
+			node.fx = node.x;
+			node.fy = node.y;
+			startLayout(simNodes, simLinks);
 		}
 	}
 
@@ -232,6 +251,11 @@
 	}
 
 	const nodeRefs = new Map<string, SVGGElement>();
+	const linkRefs = new Map<string, SVGLineElement>();
+
+	function linkKey(sourceId: string, targetId: string): string {
+		return `${sourceId}|${targetId}`;
+	}
 
 	function registerNodeRef(el: SVGGElement, id: string) {
 		nodeRefs.set(id, el);
@@ -242,47 +266,41 @@
 		};
 	}
 
+	function registerLinkRef(el: SVGLineElement, key: string) {
+		linkRefs.set(key, el);
+		return {
+			destroy() {
+				linkRefs.delete(key);
+			}
+		};
+	}
+
 	function applyNodePosition(node: SimNode) {
 		const el = nodeRefs.get(node.id);
 		if (el) el.setAttribute('transform', `translate(${node.x ?? 0},${node.y ?? 0})`);
 	}
 
+	function applyLink(link: SimLink) {
+		const el = linkRefs.get(linkKey(link.sourceId, link.targetId));
+		if (!el) return;
+		const src = nodeById.get(link.sourceId);
+		const tgt = nodeById.get(link.targetId);
+		if (!src || !tgt) return;
+		el.setAttribute('x1', String(src.x ?? 0));
+		el.setAttribute('y1', String(src.y ?? 0));
+		el.setAttribute('x2', String(tgt.x ?? 0));
+		el.setAttribute('y2', String(tgt.y ?? 0));
+	}
+
 	function applyLinksFor(nodeId: string) {
-		if (!svgEl) return;
-		const lines = svgEl.querySelectorAll<SVGLineElement>('line.brain-graph__link');
-		for (let i = 0; i < lines.length; i++) {
-			const link = simLinks[i];
-			if (!link) continue;
-			if (link.sourceId !== nodeId && link.targetId !== nodeId) continue;
-			const src = findNode(link.sourceId);
-			const tgt = findNode(link.targetId);
-			if (!src || !tgt) continue;
-			lines[i].setAttribute('x1', String(src.x ?? 0));
-			lines[i].setAttribute('y1', String(src.y ?? 0));
-			lines[i].setAttribute('x2', String(tgt.x ?? 0));
-			lines[i].setAttribute('y2', String(tgt.y ?? 0));
+		for (const link of simLinks) {
+			if (link.sourceId === nodeId || link.targetId === nodeId) applyLink(link);
 		}
 	}
 
 	function applyAllPositions() {
-		if (!svgEl) return;
-		const byId = new Map<string, SimNode>();
-		for (const node of simNodes) {
-			byId.set(node.id, node);
-			applyNodePosition(node);
-		}
-		const lines = svgEl.querySelectorAll<SVGLineElement>('line.brain-graph__link');
-		for (let i = 0; i < lines.length; i++) {
-			const link = simLinks[i];
-			if (!link) continue;
-			const src = byId.get(link.sourceId);
-			const tgt = byId.get(link.targetId);
-			if (!src || !tgt) continue;
-			lines[i].setAttribute('x1', String(src.x ?? 0));
-			lines[i].setAttribute('y1', String(src.y ?? 0));
-			lines[i].setAttribute('x2', String(tgt.x ?? 0));
-			lines[i].setAttribute('y2', String(tgt.y ?? 0));
-		}
+		for (const node of simNodes) applyNodePosition(node);
+		for (const link of simLinks) applyLink(link);
 	}
 
 	function handleBackgroundPointerDown(e: PointerEvent) {
@@ -340,9 +358,7 @@
 	}
 
 	function findNode(id: string): SimNode | undefined {
-		// Read through simNodes (a $state proxy) so endpoint expressions share
-		// the same reactive proxy as the node mutated during drag.
-		return simNodes.find((n) => n.id === id);
+		return nodeById.get(id);
 	}
 </script>
 
@@ -369,7 +385,7 @@
 		>
 			<g class="brain-graph__viewport" transform="translate({panX},{panY}) scale({zoom})">
 				<g class="links">
-					{#each simLinks as link}
+					{#each simLinks as link (linkKey(link.sourceId, link.targetId))}
 						{@const src = findNode(link.sourceId)}
 						{@const tgt = findNode(link.targetId)}
 						{#if src && tgt}
@@ -379,6 +395,7 @@
 								x2={getNodeX(tgt)}
 								y2={getNodeY(tgt)}
 								class="brain-graph__link"
+								use:registerLinkRef={linkKey(link.sourceId, link.targetId)}
 							/>
 						{/if}
 					{/each}

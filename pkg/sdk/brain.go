@@ -111,6 +111,8 @@ type BrainStore interface {
 	CreateFile(ctx context.Context, file *BrainFile) error
 	UpdateFile(ctx context.Context, file *BrainFile) error
 	DeleteFile(ctx context.Context, fileID string) error
+	HardDeleteFile(ctx context.Context, fileID string) error
+	ListExpiredArchivedFiles(ctx context.Context, before time.Time) ([]*BrainFile, error)
 	GetFile(ctx context.Context, fileID string) (*BrainFile, error)
 	ListFiles(ctx context.Context, brainID string) ([]*BrainFile, error)
 	SearchByEmbedding(ctx context.Context, brainID string, vec []float32, limit int) ([]*BrainFileWithMeta, error)

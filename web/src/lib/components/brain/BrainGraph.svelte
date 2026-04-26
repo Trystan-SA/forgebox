@@ -46,7 +46,6 @@
 	let simulation: Simulation<SimNode, SimLink> | null = null;
 	let tick = $state(0);
 
-	let tooltip = $state<{ x: number; y: number; node: SimNode } | null>(null);
 
 	function clusterColor(clusterId: number): string {
 		if (!graph) return '#6366f1';
@@ -71,7 +70,7 @@
 
 		const nodeById = new Map(nodes.map((n) => [n.id, n]));
 
-		const links: SimLink[] = g.links
+		const links: SimLink[] = (g.links ?? [])
 			.map((l: BrainLink) => ({
 				source: l.source_file_id,
 				target: l.target_file_id
@@ -118,6 +117,9 @@
 	onDestroy(() => {
 		if (simulation) simulation.stop();
 		if (ro) ro.disconnect();
+		window.removeEventListener('pointermove', handleWindowPointerMove);
+		window.removeEventListener('pointerup', handleWindowPointerUp);
+		window.removeEventListener('pointercancel', handleWindowPointerUp);
 	});
 
 	$effect(() => {
@@ -133,17 +135,66 @@
 		dispatch('select', { file_id: node.id });
 	}
 
-	function handleNodeMouseEnter(e: MouseEvent, node: SimNode) {
-		const rect = containerEl.getBoundingClientRect();
-		tooltip = {
-			x: e.clientX - rect.left + 10,
-			y: e.clientY - rect.top - 10,
-			node
-		};
+	const DRAG_THRESHOLD = 4;
+	let dragState: {
+		node: SimNode;
+		pointerId: number;
+		startX: number;
+		startY: number;
+		moved: boolean;
+	} | null = null;
+
+	function svgPoint(clientX: number, clientY: number): { x: number; y: number } {
+		const rect = svgEl.getBoundingClientRect();
+		return { x: clientX - rect.left, y: clientY - rect.top };
 	}
 
-	function handleNodeMouseLeave() {
-		tooltip = null;
+	function handleNodePointerDown(e: PointerEvent, node: SimNode) {
+		if (e.button !== 0) return;
+		e.preventDefault();
+		const p = svgPoint(e.clientX, e.clientY);
+		node.fx = node.x;
+		node.fy = node.y;
+		dragState = { node, pointerId: e.pointerId, startX: p.x, startY: p.y, moved: false };
+		if (simulation) simulation.alphaTarget(0.3).restart();
+		// Attach listeners on window so {#key tick} remounts don't lose them.
+		window.addEventListener('pointermove', handleWindowPointerMove);
+		window.addEventListener('pointerup', handleWindowPointerUp);
+		window.addEventListener('pointercancel', handleWindowPointerUp);
+	}
+
+	function handleWindowPointerMove(e: PointerEvent) {
+		if (!dragState || e.pointerId !== dragState.pointerId) return;
+		const p = svgPoint(e.clientX, e.clientY);
+		if (!dragState.moved) {
+			const dx = p.x - dragState.startX;
+			const dy = p.y - dragState.startY;
+			if (dx * dx + dy * dy >= DRAG_THRESHOLD * DRAG_THRESHOLD) {
+				dragState.moved = true;
+			}
+		}
+		dragState.node.fx = p.x;
+		dragState.node.fy = p.y;
+		dragState.node.x = p.x;
+		dragState.node.y = p.y;
+		// Bypass Svelte reactivity: write the transform straight to the DOM.
+		// This avoids any subtlety with reactive tracking inside keyed each
+		// blocks when the node object identity is preserved.
+		applyNodePosition(dragState.node);
+		applyLinksFor(dragState.node.id);
+	}
+
+	function handleWindowPointerUp(e: PointerEvent) {
+		if (!dragState || e.pointerId !== dragState.pointerId) return;
+		const node = dragState.node;
+		const moved = dragState.moved;
+		dragState = null;
+		window.removeEventListener('pointermove', handleWindowPointerMove);
+		window.removeEventListener('pointerup', handleWindowPointerUp);
+		window.removeEventListener('pointercancel', handleWindowPointerUp);
+		if (simulation) simulation.alphaTarget(0);
+		// Node stays pinned where it was dropped (fx/fy retained).
+		if (!moved) handleNodeClick(node);
 	}
 
 	function getNodeX(node: SimNode): number {
@@ -152,6 +203,47 @@
 
 	function getNodeY(node: SimNode): number {
 		return node.y ?? 0;
+	}
+
+	// Returns a transform string that depends on `tick` so Svelte re-evaluates
+	// the attribute whenever the simulation/drag bumps the tick counter,
+	// even though node x/y are mutated on a non-reactive object.
+	function nodeTransform(node: SimNode, _tick: number): string {
+		return `translate(${node.x ?? 0},${node.y ?? 0})`;
+	}
+
+	const nodeRefs = new Map<string, SVGGElement>();
+
+	function registerNodeRef(el: SVGGElement, id: string) {
+		nodeRefs.set(id, el);
+		return {
+			destroy() {
+				nodeRefs.delete(id);
+			}
+		};
+	}
+
+	function applyNodePosition(node: SimNode) {
+		const el = nodeRefs.get(node.id);
+		if (el) el.setAttribute('transform', `translate(${node.x ?? 0},${node.y ?? 0})`);
+	}
+
+	function applyLinksFor(nodeId: string) {
+		if (!svgEl) return;
+		const lines = svgEl.querySelectorAll<SVGLineElement>('line.brain-graph__link');
+		for (let i = 0; i < lines.length; i++) {
+			const link = simLinks[i];
+			if (!link) continue;
+			const src = link.source as SimNode;
+			const tgt = link.target as SimNode;
+			if (!src || !tgt) continue;
+			if (typeof src !== 'object' || typeof tgt !== 'object') continue;
+			if (src.id !== nodeId && tgt.id !== nodeId) continue;
+			lines[i].setAttribute('x1', String(src.x ?? 0));
+			lines[i].setAttribute('y1', String(src.y ?? 0));
+			lines[i].setAttribute('x2', String(tgt.x ?? 0));
+			lines[i].setAttribute('y2', String(tgt.y ?? 0));
+		}
 	}
 
 	function getLinkSourceNode(link: SimLink): SimNode {
@@ -176,82 +268,72 @@
 		</div>
 	{:else}
 		<svg bind:this={svgEl} {width} {height} class="brain-graph__svg">
-			{#key tick}
-				<g class="links">
-					{#each simLinks as link}
-						{@const src = getLinkSourceNode(link)}
-						{@const tgt = getLinkTargetNode(link)}
-						{#if src && tgt}
-							<line
-								x1={getNodeX(src)}
-								y1={getNodeY(src)}
-								x2={getNodeX(tgt)}
-								y2={getNodeY(tgt)}
-								class="brain-graph__link"
-							/>
+			<g class="links">
+				{#each simLinks as link}
+					{@const src = getLinkSourceNode(link)}
+					{@const tgt = getLinkTargetNode(link)}
+					{#if src && tgt}
+						<line
+							x1={getNodeX(src)}
+							y1={getNodeY(src)}
+							x2={getNodeX(tgt)}
+							y2={getNodeY(tgt)}
+							class="brain-graph__link"
+						/>
+					{/if}
+				{/each}
+			</g>
+			<g class="nodes">
+				{#each simNodes as node (node.id)}
+					{@const isSelected = selectedFileId === node.id}
+					{@const isHighlighted = searchHighlights.includes(node.id)}
+					{@const color = clusterColor(node.cluster_id)}
+					<g
+						class="brain-graph__node-group"
+						transform={nodeTransform(node, tick)}
+						use:registerNodeRef={node.id}
+						onpointerdown={(e) => handleNodePointerDown(e, node)}
+						role="button"
+						tabindex="0"
+						onkeydown={(e) => e.key === 'Enter' && handleNodeClick(node)}
+					>
+						{#if isHighlighted}
+							<circle r="16" fill={color} opacity="0.25" class="brain-graph__pulse" />
 						{/if}
-					{/each}
-				</g>
-				<g class="nodes">
-					{#each simNodes as node}
-						{@const isSelected = selectedFileId === node.id}
-						{@const isHighlighted = searchHighlights.includes(node.id)}
-						{@const color = clusterColor(node.cluster_id)}
-						<g
-							class="brain-graph__node-group"
-							transform="translate({getNodeX(node)},{getNodeY(node)})"
-							onclick={() => handleNodeClick(node)}
-							onmouseenter={(e) => handleNodeMouseEnter(e, node)}
-							onmouseleave={handleNodeMouseLeave}
-							role="button"
-							tabindex="0"
-							onkeydown={(e) => e.key === 'Enter' && handleNodeClick(node)}
-						>
-							{#if isHighlighted}
-								<circle r="16" fill={color} opacity="0.25" class="brain-graph__pulse" />
-							{/if}
-							{#if isSelected}
-								<circle r="12" fill="none" stroke="#6366f1" stroke-width="3" />
-							{/if}
-							<circle
-								r="8"
-								fill={color}
-								class="brain-graph__node"
-								class:brain-graph__node--selected={isSelected}
-							/>
-						</g>
-					{/each}
-				</g>
-			{/key}
+						{#if isSelected}
+							<circle r="12" fill="none" stroke="#6366f1" stroke-width="3" />
+						{/if}
+						<circle
+							r="8"
+							fill={color}
+							class="brain-graph__node"
+							class:brain-graph__node--selected={isSelected}
+						/>
+						<text
+							y="22"
+							text-anchor="middle"
+							class="brain-graph__node-label"
+						>{node.title}</text>
+					</g>
+				{/each}
+			</g>
 
-			{#if graph && graph.clusters.length > 0}
-				<g class="legend" transform="translate(12,12)">
-					{#each graph.clusters as cluster, i}
-						<g transform="translate(0,{i * 20})">
-							<circle cx="6" cy="6" r="5" fill={cluster.color} />
-							<text x="16" y="10" class="brain-graph__legend-label">{cluster.label}</text>
-						</g>
-					{/each}
-				</g>
+			{#if graph}
+				{@const labeled = graph.clusters.filter((c) => c.label && c.label.trim() !== '')}
+				{#if labeled.length > 0}
+					<g class="legend" transform="translate(12,12)">
+						{#each labeled as cluster, i}
+							<g transform="translate(0,{i * 20})">
+								<circle cx="6" cy="6" r="5" fill={cluster.color} />
+								<text x="16" y="10" class="brain-graph__legend-label">{cluster.label}</text>
+							</g>
+						{/each}
+					</g>
+				{/if}
 			{/if}
 		</svg>
 	{/if}
 
-	{#if tooltip}
-		<div
-			class="brain-graph__tooltip"
-			style="left:{tooltip.x}px;top:{tooltip.y}px"
-		>
-			<div class="brain-graph__tooltip-title">{tooltip.node.title}</div>
-			{#if tooltip.node.hashtags.length > 0}
-				<div class="brain-graph__tooltip-tags">
-					{#each tooltip.node.hashtags.slice(0, 5) as tag}
-						<span class="brain-graph__tag">#{tag}</span>
-					{/each}
-				</div>
-			{/if}
-		</div>
-	{/if}
 </div>
 
 <style lang="scss">
@@ -285,7 +367,18 @@
 		}
 
 		&__node-group {
-			cursor: pointer;
+			cursor: grab;
+			touch-action: none;
+			outline: none;
+
+			&:active {
+				cursor: grabbing;
+			}
+
+			&:focus,
+			&:focus-visible {
+				outline: none;
+			}
 
 			&:hover circle.brain-graph__node {
 				filter: brightness(1.15);
@@ -304,41 +397,18 @@
 			animation: pulse-ring 1s ease-in-out infinite;
 		}
 
-		&__tooltip {
-			position: absolute;
-			z-index: 20;
-			background: $neutral-800;
-			color: $neutral-100;
-			border-radius: $radius-lg;
-			padding: $space-2 $space-3;
-			pointer-events: none;
-			max-width: 200px;
-			box-shadow: $shadow-md;
-		}
-
-		&__tooltip-title {
-			font-size: $text-xs;
-			font-weight: $font-semibold;
-			color: $neutral-0;
-			margin-bottom: $space-1;
-		}
-
-		&__tooltip-tags {
-			display: flex;
-			flex-wrap: wrap;
-			gap: 4px;
-		}
-
-		&__tag {
-			font-size: 10px;
-			color: $neutral-400;
-			font-family: $font-mono;
-		}
-
 		&__legend-label {
 			font-size: 10px;
 			fill: $neutral-500;
 			font-family: $font-sans;
+		}
+
+		&__node-label {
+			font-size: 11px;
+			fill: $neutral-500;
+			font-family: $font-sans;
+			pointer-events: none;
+			user-select: none;
 		}
 	}
 

@@ -9,6 +9,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"time"
+
 	"github.com/forgebox/forgebox/internal/brain"
 	"github.com/forgebox/forgebox/internal/config"
 	"github.com/forgebox/forgebox/internal/engine"
@@ -133,6 +135,8 @@ func cmdServe() {
 			brainStore = brainDB
 			brainSvc = brain.NewService(brainDB, embedder)
 			slog.Info("brain feature enabled")
+
+			go runArchiveCleanup(ctx, brainSvc)
 		}
 	}
 
@@ -173,6 +177,37 @@ func cmdServe() {
 	if err := srv.Run(ctx); err != nil {
 		slog.Error("server error", "error", err)
 		os.Exit(1)
+	}
+}
+
+// runArchiveCleanup runs hourly and purges brain files whose deleted_at is
+// older than brain.ArchiveRetention.
+func runArchiveCleanup(ctx context.Context, svc *brain.Service) {
+	const interval = time.Hour
+	tick := time.NewTicker(interval)
+	defer tick.Stop()
+
+	run := func() {
+		runCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
+		n, err := svc.PurgeArchived(runCtx, brain.ArchiveRetention)
+		if err != nil {
+			slog.Error("brain archive cleanup failed", "error", err)
+			return
+		}
+		if n > 0 {
+			slog.Info("brain archive cleanup", "purged", n)
+		}
+	}
+
+	run()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+			run()
+		}
 	}
 }
 

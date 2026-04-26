@@ -1,10 +1,34 @@
 <script lang="ts">
 	import { onMount, onDestroy, createEventDispatcher } from 'svelte';
-	import { Editor } from '@tiptap/core';
+	import { Editor, Mark } from '@tiptap/core';
 	import StarterKit from '@tiptap/starter-kit';
-	import Link from '@tiptap/extension-link';
 	import Placeholder from '@tiptap/extension-placeholder';
 	import type { BrainFile } from '$lib/api/types';
+
+	const BrainLinkMark = Mark.create({
+		name: 'brainLink',
+		inclusive: false,
+		addAttributes() {
+			return {
+				title: {
+					default: null,
+					parseHTML: (el) => (el as HTMLElement).getAttribute('data-link'),
+					renderHTML: (attrs) =>
+						attrs.title ? { 'data-link': attrs.title as string } : {}
+				}
+			};
+		},
+		parseHTML() {
+			return [{ tag: 'span[data-brain-link]' }];
+		},
+		renderHTML({ HTMLAttributes }) {
+			return [
+				'span',
+				{ ...HTMLAttributes, 'data-brain-link': '', class: 'brain-link-badge' },
+				0
+			];
+		}
+	});
 
 	interface Props {
 		file: BrainFile | null;
@@ -39,9 +63,15 @@
 			.replace(/<strong[^>]*>(.*?)<\/strong>/gi, '**$1**')
 			.replace(/<em[^>]*>(.*?)<\/em>/gi, '_$1_')
 			.replace(/<code[^>]*>(.*?)<\/code>/gi, '`$1`')
-			.replace(/<li[^>]*>(.*?)<\/li>/gi, '- $1\n')
+			.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, '- $1\n')
 			.replace(/<br\s*\/?>/gi, '\n')
-			.replace(/<p[^>]*>(.*?)<\/p>/gi, '$1\n')
+			.replace(/<\/p>\s*<p[^>]*>/gi, '\n\n')
+			.replace(/<p[^>]*>([\s\S]*?)<\/p>/gi, '$1\n')
+			.replace(/<span[^>]*\bdata-brain-link\b[^>]*>([\s\S]*?)<\/span>/gi, (match, inner) => {
+				const linkAttr = match.match(/data-link="([^"]*)"/i);
+				const title = linkAttr ? linkAttr[1] : inner;
+				return `[[${title}]]`;
+			})
 			.replace(/<[^>]+>/g, '')
 			.replace(/&amp;/g, '&')
 			.replace(/&lt;/g, '<')
@@ -53,18 +83,30 @@
 
 	function markdownToHtml(md: string): string {
 		if (!md) return '';
-		let html = md
-			.replace(/^### (.+)$/gm, '<h3>$1</h3>')
-			.replace(/^## (.+)$/gm, '<h2>$1</h2>')
-			.replace(/^# (.+)$/gm, '<h1>$1</h1>')
-			.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-			.replace(/_(.+?)_/g, '<em>$1</em>')
-			.replace(/`(.+?)`/g, '<code>$1</code>')
-			.replace(/^- (.+)$/gm, '<li>$1</li>')
-			.replace(/\n/g, '<br>');
+		const paragraphs = md.split(/\n{2,}/);
 
-		html = html.replace(/(<li>.*<\/li>\s*)+/g, (m) => `<ul>${m}</ul>`);
-		return html;
+		return paragraphs
+			.map((para) => {
+				let html = para
+					.replace(/^### (.+)$/gm, '<h3>$1</h3>')
+					.replace(/^## (.+)$/gm, '<h2>$1</h2>')
+					.replace(/^# (.+)$/gm, '<h1>$1</h1>')
+					.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+					.replace(/_(.+?)_/g, '<em>$1</em>')
+					.replace(/`(.+?)`/g, '<code>$1</code>')
+					.replace(/\[\[([^\[\]]+)\]\]/g, (_m, title) => {
+						const safe = String(title).replace(/"/g, '&quot;');
+						return `<span data-brain-link data-link="${safe}">${title}</span>`;
+					})
+					.replace(/^- (.+)$/gm, '<li>$1</li>')
+					.replace(/\n/g, '<br>');
+
+				html = html.replace(/(<li>.*<\/li>\s*)+/g, (m) => `<ul>${m}</ul>`);
+				if (!html.trim()) return '';
+				if (/^\s*<(h[1-6]|ul|ol|li|blockquote|pre)\b/i.test(html)) return html;
+				return `<p>${html}</p>`;
+			})
+			.join('');
 	}
 
 	function destroyEditor() {
@@ -81,21 +123,67 @@
 		editor = new Editor({
 			element: editorContainer,
 			extensions: [
-				StarterKit,
-				Link.configure({ openOnClick: false }),
+				StarterKit.configure({ link: { openOnClick: false } }),
+				BrainLinkMark,
 				Placeholder.configure({ placeholder: 'Write your notes here...' })
 			],
 			content: markdownToHtml(content),
 			editorProps: {
-				attributes: { class: 'brain-editor__tiptap' }
+				attributes: { class: 'brain-editor__tiptap' },
+				handleClickOn: (view, _pos, _node, _nodePos, event) => {
+					const target = event.target as HTMLElement | null;
+					if (!target) return false;
+					const badge = target.closest('span[data-brain-link]') as HTMLElement | null;
+					if (!badge) return false;
+
+					const rect = badge.getBoundingClientRect();
+					const distFromRight = rect.right - (event as MouseEvent).clientX;
+					if (distFromRight > 18 || distFromRight < 0) return false;
+
+					const start = view.posAtDOM(badge, 0);
+					const end = start + (badge.textContent ?? '').length;
+					if (start < 0 || end <= start) return false;
+
+					const tr = view.state.tr.delete(start, end);
+					view.dispatch(tr);
+					event.preventDefault();
+					return true;
+				}
 			},
-			onUpdate: ({ editor: e }) => {
-				checkAutocomplete(e.getText(), e.state.selection.$anchor.pos);
+			onUpdate: ({ editor: e, transaction }) => {
+				if (!transaction.getMeta('brainLinkSweep')) {
+					sweepBrainLinks(e);
+				}
+				const cursor = e.state.selection.from;
+				const textBeforeCursor = e.state.doc.textBetween(0, cursor, '\n', '\n');
+				checkAutocomplete(textBeforeCursor);
 			}
 		});
 	}
 
-	function checkAutocomplete(text: string, _pos: number) {
+	function sweepBrainLinks(e: Editor) {
+		const markType = e.schema.marks.brainLink;
+		if (!markType) return;
+		const tr = e.state.tr;
+		let modified = false;
+		e.state.doc.descendants((node, pos) => {
+			if (!node.isText) return;
+			const mark = node.marks.find((m) => m.type === markType);
+			if (!mark) return;
+			const expected = String(mark.attrs.title ?? '');
+			if (node.text !== expected) {
+				tr.removeMark(pos, pos + node.nodeSize, markType);
+				modified = true;
+			}
+		});
+		if (modified) {
+			tr.setMeta('brainLinkSweep', true);
+			tr.setMeta('addToHistory', false);
+			e.view.dispatch(tr);
+		}
+	}
+
+	function checkAutocomplete(text: string) {
 		const lines = text.split('\n');
 		const lastLine = lines[lines.length - 1] ?? '';
 
@@ -103,7 +191,7 @@
 		if (fileMatch) {
 			const query = fileMatch[1].toLowerCase();
 			const items = allFiles
-				.filter((f) => f.title.toLowerCase().includes(query))
+				.filter((f) => f.id !== file?.id && f.title.toLowerCase().includes(query))
 				.map((f) => f.title)
 				.slice(0, 8);
 			autocomplete = { type: 'file', query: fileMatch[1], items, selectedIdx: 0 };
@@ -124,16 +212,34 @@
 	function insertAutocompleteItem(item: string) {
 		if (!editor || !autocomplete) return;
 
-		const { state, commands } = editor;
-		const { from } = state.selection;
-		const text = state.doc.textContent;
-
+		const { from } = editor.state.selection;
 		const prefix = autocomplete.type === 'file' ? '[[' : '#';
-		const suffix = autocomplete.type === 'file' ? `${item}]]` : item;
 		const queryLen = autocomplete.query.length + prefix.length;
+		const docSize = editor.state.doc.content.size;
+		const trailingCloser =
+			autocomplete.type === 'file' &&
+			editor.state.doc.textBetween(from, Math.min(from + 2, docSize)) === ']]'
+				? 2
+				: 0;
 
-		commands.deleteRange({ from: from - queryLen, to: from });
-		commands.insertContent(prefix === '[[' ? `[[${item}]]` : `#${item}`);
+		if (autocomplete.type === 'file') {
+			const safeTitle = item.replace(/"/g, '&quot;');
+			const html = `<span data-brain-link data-link="${safeTitle}">${item}</span>&nbsp;`;
+			editor
+				.chain()
+				.focus()
+				.deleteRange({ from: from - queryLen, to: from + trailingCloser })
+				.insertContent(html)
+				.run();
+		} else {
+			editor
+				.chain()
+				.focus()
+				.deleteRange({ from: from - queryLen, to: from })
+				.insertContent(`#${item} `)
+				.run();
+		}
+
 		autocomplete = null;
 	}
 
@@ -170,9 +276,7 @@
 
 	function handleDelete() {
 		if (!file) return;
-		if (window.confirm(`Delete "${file.title}"? This cannot be undone.`)) {
-			dispatch('delete', {});
-		}
+		dispatch('delete', {});
 	}
 
 	function setFormat(format: string) {
@@ -394,6 +498,59 @@
 				:global(pre) { background: $neutral-900; color: $neutral-100; padding: $space-4; border-radius: $radius-lg; margin-bottom: $space-3; overflow-x: auto; }
 				:global(strong) { font-weight: $font-semibold; }
 				:global(em) { font-style: italic; }
+				:global(span[data-brain-link]) {
+					display: inline-flex;
+					align-items: center;
+					gap: 4px;
+					padding: 1px 4px 1px 8px;
+					font-family: $font-sans;
+					font-size: $text-xs;
+					font-weight: $font-medium;
+					color: #6d28d9;
+					background: #f5f3ff;
+					border: 1px solid #ddd6fe;
+					border-radius: $radius-md;
+					line-height: 1.4;
+					white-space: nowrap;
+					cursor: default;
+					transition: background 0.15s ease, border-color 0.15s ease;
+
+					&::before {
+						content: '';
+						display: inline-block;
+						width: 6px;
+						height: 6px;
+						border-radius: 50%;
+						background: #8b5cf6;
+					}
+
+					&::after {
+						content: '×';
+						display: inline-flex;
+						align-items: center;
+						justify-content: center;
+						width: 14px;
+						height: 14px;
+						margin-left: 2px;
+						font-size: 13px;
+						line-height: 1;
+						font-weight: $font-bold;
+						color: #a78bfa;
+						border-radius: 999px;
+						cursor: pointer;
+						transition: background 0.15s ease, color 0.15s ease;
+					}
+
+					&:hover {
+						background: #ede9fe;
+						border-color: #c4b5fd;
+					}
+
+					&:hover::after {
+						background: #c4b5fd;
+						color: #4c1d95;
+					}
+				}
 				:global(.is-editor-empty:first-child::before) {
 					content: attr(data-placeholder);
 					color: $neutral-400;

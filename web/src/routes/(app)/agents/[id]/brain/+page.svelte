@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
 	import BrainGraph from '$lib/components/brain/BrainGraph.svelte';
@@ -9,6 +10,7 @@
 	import BrainSearch from '$lib/components/brain/BrainSearch.svelte';
 	import DreamPanel from '$lib/components/brain/DreamPanel.svelte';
 	import * as brain from '$lib/stores/brain.svelte';
+	import { pushToast } from '$lib/stores/toasts.svelte';
 	import type { BrainFile, BrainFileWithMeta } from '$lib/api/types';
 
 	let agentId = $derived(page.params.id ?? '');
@@ -20,6 +22,9 @@
 	let newFileError = $state('');
 	let creatingFile = $state(false);
 	let loadError = $state<string | null>(null);
+	let showDeleteModal = $state(false);
+	let deletingFile = $state(false);
+	let deleteError = $state('');
 
 	onMount(async () => {
 		try {
@@ -33,18 +38,41 @@
 		if (!brain.state.selectedFileId) return;
 		try {
 			await brain.updateFile(brain.state.selectedFileId, e.detail.title, e.detail.content);
+			pushToast('File saved', 'success');
 		} catch (err) {
-			console.error('Save failed:', err);
+			const msg = err instanceof Error ? err.message : 'Failed to save file';
+			pushToast(msg, 'error');
 		}
 	}
 
-	async function handleDelete() {
+	function handleDelete() {
 		if (!brain.state.selectedFileId) return;
+		deleteError = '';
+		showDeleteModal = true;
+	}
+
+	async function confirmDelete() {
+		if (!brain.state.selectedFileId) return;
+		deletingFile = true;
+		deleteError = '';
 		try {
 			await brain.deleteFile(brain.state.selectedFileId);
+			showDeleteModal = false;
 		} catch (err) {
-			console.error('Delete failed:', err);
+			deleteError = err instanceof Error ? err.message : 'Failed to delete file';
+		} finally {
+			deletingFile = false;
 		}
+	}
+
+	function cancelDelete() {
+		if (deletingFile) return;
+		showDeleteModal = false;
+	}
+
+	function handleDeleteKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') cancelDelete();
+		if (e.key === 'Enter') confirmDelete();
 	}
 
 	async function handleTitleChange(e: CustomEvent<string>) {
@@ -139,11 +167,16 @@
 <div class="bp">
 	<div class="bp__topbar">
 		<div class="bp__topbar-left">
-			<a href="/agents/{agentId}" class="bp__back">
+			<button
+				type="button"
+				class="bp__back"
+				onclick={() => goto(`/agents/${agentId}`)}
+				aria-label="Back to agent"
+			>
 				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 					<polyline points="15 18 9 12 15 6" />
 				</svg>
-			</a>
+			</button>
 			<h1 class="bp__title">Brain</h1>
 		</div>
 
@@ -277,6 +310,40 @@
 			</div>
 		</div>
 	{/if}
+
+	{#if showDeleteModal}
+		<div class="bp__modal-backdrop" onclick={cancelDelete} role="presentation"></div>
+		<div
+			class="bp__modal"
+			role="dialog"
+			aria-modal="true"
+			aria-label="Delete brain file"
+			onkeydown={handleDeleteKeydown}
+			tabindex="-1"
+		>
+			<h3 class="bp__modal-title">Archive brain file?</h3>
+			<p class="bp__modal-text">
+				{#if brain.state.selectedFile}
+					"{brain.state.selectedFile.title}" will be archived for 30 days, then permanently
+					removed by the cleanup task. You can restore it anytime before then.
+				{:else}
+					This file will be archived for 30 days, then permanently removed by the cleanup
+					task. You can restore it anytime before then.
+				{/if}
+			</p>
+			{#if deleteError}
+				<p class="bp__modal-error">{deleteError}</p>
+			{/if}
+			<div class="bp__modal-actions">
+				<button type="button" class="btn-secondary" onclick={cancelDelete} disabled={deletingFile}>
+					Cancel
+				</button>
+				<button type="button" class="bp__btn-delete" onclick={confirmDelete} disabled={deletingFile}>
+					{deletingFile ? 'Deleting…' : 'Delete'}
+				</button>
+			</div>
+		</div>
+	{/if}
 </div>
 
 <style lang="scss">
@@ -316,8 +383,12 @@
 			@include flex-center;
 			width: 32px;
 			height: 32px;
+			padding: 0;
+			border: 0;
+			background: transparent;
 			border-radius: $radius-lg;
 			color: $neutral-400;
+			cursor: pointer;
 			transition: all $transition-fast;
 
 			&:hover { background: $neutral-100; color: $neutral-700; }
@@ -480,6 +551,26 @@
 		&__modal-input {
 			@include input-base;
 			margin-bottom: $space-4;
+		}
+
+		&__modal-text {
+			font-size: $text-sm;
+			color: $neutral-600;
+			line-height: $leading-relaxed;
+			margin-bottom: $space-4;
+		}
+
+		&__btn-delete {
+			@include btn;
+			padding: $space-2 $space-4;
+			font-size: $text-sm;
+			font-weight: $font-medium;
+			color: $neutral-0;
+			background: $error-600;
+			border-radius: $radius-lg;
+
+			&:hover:not(:disabled) { background: $error-700; }
+			&:disabled { opacity: 0.6; }
 		}
 
 		&__modal-error {

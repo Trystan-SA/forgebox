@@ -4,24 +4,44 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/forgebox/forgebox/pkg/sdk"
 	"github.com/google/uuid"
 )
 
+// ArchiveRetention is how long soft-deleted brain files remain recoverable
+// before the cleanup pass purges them.
+const ArchiveRetention = 30 * 24 * time.Hour
+
 // Service orchestrates brain operations.
 type Service struct {
-	store    sdk.BrainStore
-	embedder Embedder
+	store     sdk.BrainStore
+	embedder  Embedder
+	debouncer *debouncer
 }
 
 // NewService creates a new brain service.
 func NewService(store sdk.BrainStore, embedder Embedder) *Service {
 	return &Service{
-		store:    store,
-		embedder: embedder,
+		store:     store,
+		embedder:  embedder,
+		debouncer: newDebouncer(graphRecomputeDelay),
 	}
+}
+
+// scheduleGraphRecompute debounces graph recomputation per brain.
+// Repeated mutations within the debounce window collapse into one recompute.
+func (s *Service) scheduleGraphRecompute(brainID string) {
+	s.debouncer.Trigger(brainID, func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		if _, err := s.ComputeGraph(ctx, brainID); err != nil {
+			slog.Error("brain graph recompute failed", "brain_id", brainID, "error", err)
+		}
+	})
 }
 
 // GetOrCreateBrain returns the brain for an automation, creating one if needed.
@@ -81,6 +101,7 @@ func (s *Service) CreateFile(ctx context.Context, brainID, title, content, creat
 		slog.Warn("failed to save links", "error", err, "file_id", file.ID)
 	}
 
+	s.scheduleGraphRecompute(brainID)
 	return file, nil
 }
 
@@ -115,7 +136,70 @@ func (s *Service) UpdateFile(ctx context.Context, fileID, title, content string)
 		slog.Warn("failed to save links", "error", err, "file_id", file.ID)
 	}
 
+	s.scheduleGraphRecompute(file.BrainID)
 	return file, nil
+}
+
+// DeleteFile removes a brain file and triggers a graph recompute.
+func (s *Service) DeleteFile(ctx context.Context, fileID string) error {
+	file, err := s.store.GetFile(ctx, fileID)
+	if err != nil {
+		return fmt.Errorf("get file: %w", err)
+	}
+	if err := s.store.DeleteFile(ctx, fileID); err != nil {
+		return fmt.Errorf("delete file: %w", err)
+	}
+	s.scheduleGraphRecompute(file.BrainID)
+	return nil
+}
+
+// PurgeArchived hard-deletes soft-deleted brain files older than retention.
+// For each purged file, [[Title]] references in still-active files of the
+// same brain are removed from their content so links don't dangle.
+// Returns the number of files purged.
+func (s *Service) PurgeArchived(ctx context.Context, retention time.Duration) (int, error) {
+	cutoff := time.Now().Add(-retention)
+	expired, err := s.store.ListExpiredArchivedFiles(ctx, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("list expired archived: %w", err)
+	}
+
+	purged := 0
+	for _, file := range expired {
+		if err := s.removeLinkReferences(ctx, file.BrainID, file.Title); err != nil {
+			slog.Warn("failed to clean link references before purge",
+				"file_id", file.ID, "title", file.Title, "error", err)
+		}
+		if err := s.store.HardDeleteFile(ctx, file.ID); err != nil {
+			slog.Error("hard-delete failed", "file_id", file.ID, "error", err)
+			continue
+		}
+		purged++
+		s.scheduleGraphRecompute(file.BrainID)
+	}
+	return purged, nil
+}
+
+// removeLinkReferences strips [[title]] occurrences from the content of all
+// active files in the given brain.
+func (s *Service) removeLinkReferences(ctx context.Context, brainID, title string) error {
+	siblings, err := s.store.ListFiles(ctx, brainID)
+	if err != nil {
+		return fmt.Errorf("list files: %w", err)
+	}
+
+	pattern := regexp.MustCompile(`\[\[\s*` + regexp.QuoteMeta(title) + `\s*\]\]`)
+	for _, sibling := range siblings {
+		if !pattern.MatchString(sibling.Content) {
+			continue
+		}
+		newContent := pattern.ReplaceAllString(sibling.Content, "")
+		newContent = strings.TrimSpace(newContent)
+		if _, err := s.UpdateFile(ctx, sibling.ID, sibling.Title, newContent); err != nil {
+			return fmt.Errorf("update sibling %s: %w", sibling.ID, err)
+		}
+	}
+	return nil
 }
 
 // Search performs a semantic search across brain files using RAG.

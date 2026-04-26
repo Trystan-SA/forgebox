@@ -143,7 +143,7 @@ func (s *Server) handleDeleteBrainFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fileID := r.PathValue("fid")
-	if err := s.brainStore.DeleteFile(r.Context(), fileID); err != nil {
+	if err := s.brainService.DeleteFile(r.Context(), fileID); err != nil {
 		slog.Error("failed to delete brain file", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to delete file")
 		return
@@ -163,12 +163,20 @@ func (s *Server) handleGetBrainGraph(w http.ResponseWriter, r *http.Request) {
 	}
 	graph, err := s.brainStore.GetGraph(r.Context(), brain.ID)
 	if err != nil {
-		writeJSON(w, http.StatusOK, &sdk.BrainGraph{
-			BrainID:  brain.ID,
-			Clusters: []sdk.GraphCluster{},
-			Nodes:    []sdk.GraphNode{},
-			Links:    []sdk.BrainLink{},
-		})
+		// No precomputed graph yet — compute synchronously so the user
+		// sees nodes immediately on first visit.
+		computed, cerr := s.brainService.ComputeGraph(r.Context(), brain.ID)
+		if cerr != nil {
+			slog.Error("failed to compute brain graph", "error", cerr)
+			writeJSON(w, http.StatusOK, &sdk.BrainGraph{
+				BrainID:  brain.ID,
+				Clusters: []sdk.GraphCluster{},
+				Nodes:    []sdk.GraphNode{},
+				Links:    []sdk.BrainLink{},
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, computed)
 		return
 	}
 	writeJSON(w, http.StatusOK, graph)

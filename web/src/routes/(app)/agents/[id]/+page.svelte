@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import type { AgentRole, Agent } from '$lib/api/types';
+	import { listBrainFiles } from '$lib/api/brain';
 
 	let agentId = $derived(page.params.id);
 	let notFound = $state(false);
@@ -17,6 +18,7 @@
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let saved = $state(false);
+	let brainFileCount = $state(0);
 
 	const availableTools = [
 		{ id: 'bash', name: 'Shell', desc: 'Execute shell commands', icon: 'M4 17l6-6-6-6M12 19h8' },
@@ -26,7 +28,7 @@
 		{ id: 'code_interpreter', name: 'Code', desc: 'Run Python code', icon: 'M16 18l6-6-6-6M8 6l-6 6 6 6' }
 	];
 
-	onMount(() => {
+	onMount(async () => {
 		const agents: Agent[] = JSON.parse(localStorage.getItem('forgebox_agents') ?? '[]');
 		const agent = agents.find((a) => a.id === agentId);
 		if (!agent) { notFound = true; return; }
@@ -38,6 +40,13 @@
 		model = agent.model;
 		tools = [...agent.tools];
 		sharing = agent.sharing;
+
+		try {
+			const files = await listBrainFiles(agentId);
+			brainFileCount = files.length;
+		} catch {
+			brainFileCount = 0;
+		}
 	});
 
 	function toggleTool(id: string) {
@@ -100,15 +109,6 @@
 				<h1 class="cr__title">Edit Agent</h1>
 				<p class="cr__sub">Update this agent's configuration.</p>
 			</div>
-			<a href="/agents/{agentId}/brain" class="cr__brain">
-				<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M9.5 2a4.5 4.5 0 0 0-4.5 4.5v0A3.5 3.5 0 0 0 3 10v0a3.5 3.5 0 0 0 2 3.16V15a4 4 0 0 0 4 4h.5" />
-					<path d="M14.5 2a4.5 4.5 0 0 1 4.5 4.5v0A3.5 3.5 0 0 1 21 10v0a3.5 3.5 0 0 1-2 3.16V15a4 4 0 0 1-4 4h-.5" />
-					<path d="M9.5 2v20" />
-					<path d="M14.5 2v20" />
-				</svg>
-				Brain
-			</a>
 		</div>
 
 		{#if error}
@@ -276,6 +276,16 @@
 					</div>
 				{/if}
 			</div>
+			<a href="/agents/{agentId}/brain" class="cr__brain">
+				<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M9.5 2a4.5 4.5 0 0 0-4.5 4.5v0A3.5 3.5 0 0 0 3 10v0a3.5 3.5 0 0 0 2 3.16V15a4 4 0 0 0 4 4h.5" />
+					<path d="M14.5 2a4.5 4.5 0 0 1 4.5 4.5v0A3.5 3.5 0 0 1 21 10v0a3.5 3.5 0 0 1-2 3.16V15a4 4 0 0 1-4 4h-.5" />
+					<path d="M9.5 2v20" />
+					<path d="M14.5 2v20" />
+				</svg>
+				<span class="cr__brain-label">Brain</span>
+				<span class="cr__brain-count">({brainFileCount})</span>
+			</a>
 		</div>
 	</aside>
 </div>
@@ -305,23 +315,38 @@
 			min-width: 0;
 		}
 
+		&__brain-label {
+			line-height: 1;
+		}
+
+		&__brain-count {
+			font-weight: $font-normal;
+			font-size: $text-xs;
+			line-height: 1;
+			opacity: 0.7;
+			transform: translateY(1px);
+		}
+
 		&__brain {
-			display: inline-flex;
+			display: flex;
+			width: 100%;
 			align-items: center;
+			justify-content: center;
 			gap: $space-2;
-			padding: $space-2 $space-3;
+			padding: $space-3 $space-4;
 			font-size: $text-sm;
-			font-weight: $font-medium;
-			color: $neutral-700;
-			background: $neutral-50;
-			border: 1px solid $neutral-200;
+			font-weight: $font-semibold;
+			color: #fff;
+			background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+			border: 1px solid #6d28d9;
 			border-radius: $radius-lg;
+			box-shadow: 0 1px 2px rgba(109, 40, 217, 0.25), 0 0 0 1px rgba(139, 92, 246, 0.15);
 			transition: all $transition-fast;
 
 			&:hover {
-				background: $neutral-100;
-				border-color: $neutral-300;
-				color: $neutral-900;
+				background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+				box-shadow: 0 4px 12px rgba(109, 40, 217, 0.35);
+				transform: translateY(-1px);
 			}
 		}
 

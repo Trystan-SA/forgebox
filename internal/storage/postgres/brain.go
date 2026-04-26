@@ -97,15 +97,47 @@ func (b *BrainDB) UpdateFile(ctx context.Context, file *sdk.BrainFile) error {
 }
 
 func (b *BrainDB) DeleteFile(ctx context.Context, fileID string) error {
+	_, err := b.db.ExecContext(ctx,
+		`UPDATE brain_files SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL`,
+		fileID,
+	)
+	return err
+}
+
+func (b *BrainDB) HardDeleteFile(ctx context.Context, fileID string) error {
 	_, err := b.db.ExecContext(ctx, `DELETE FROM brain_files WHERE id = $1`, fileID)
 	return err
+}
+
+func (b *BrainDB) ListExpiredArchivedFiles(ctx context.Context, before time.Time) ([]*sdk.BrainFile, error) {
+	rows, err := b.db.QueryContext(ctx,
+		`SELECT id, brain_id, title, content, cluster_id, created_at, updated_at, created_by
+		 FROM brain_files
+		 WHERE deleted_at IS NOT NULL AND deleted_at < $1
+		 ORDER BY deleted_at`, before,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var files []*sdk.BrainFile
+	for rows.Next() {
+		var f sdk.BrainFile
+		if err := rows.Scan(&f.ID, &f.BrainID, &f.Title, &f.Content,
+			&f.ClusterID, &f.CreatedAt, &f.UpdatedAt, &f.CreatedBy); err != nil {
+			return nil, err
+		}
+		files = append(files, &f)
+	}
+	return files, rows.Err()
 }
 
 func (b *BrainDB) GetFile(ctx context.Context, fileID string) (*sdk.BrainFile, error) {
 	var rec sdk.BrainFile
 	err := b.db.QueryRowContext(ctx,
 		`SELECT id, brain_id, title, content, cluster_id, created_at, updated_at, created_by
-		 FROM brain_files WHERE id = $1`, fileID,
+		 FROM brain_files WHERE id = $1 AND deleted_at IS NULL`, fileID,
 	).Scan(&rec.ID, &rec.BrainID, &rec.Title, &rec.Content,
 		&rec.ClusterID, &rec.CreatedAt, &rec.UpdatedAt, &rec.CreatedBy)
 	if err != nil {
@@ -117,7 +149,7 @@ func (b *BrainDB) GetFile(ctx context.Context, fileID string) (*sdk.BrainFile, e
 func (b *BrainDB) ListFiles(ctx context.Context, brainID string) ([]*sdk.BrainFile, error) {
 	rows, err := b.db.QueryContext(ctx,
 		`SELECT id, brain_id, title, content, cluster_id, created_at, updated_at, created_by
-		 FROM brain_files WHERE brain_id = $1 ORDER BY created_at`, brainID,
+		 FROM brain_files WHERE brain_id = $1 AND deleted_at IS NULL ORDER BY created_at`, brainID,
 	)
 	if err != nil {
 		return nil, err
@@ -142,7 +174,7 @@ func (b *BrainDB) SearchByEmbedding(ctx context.Context, brainID string, vec []f
 		`SELECT f.id, f.brain_id, f.title, f.content, f.cluster_id, f.created_at, f.updated_at, f.created_by,
 		        1 - (f.embedding <=> $1) AS score
 		 FROM brain_files f
-		 WHERE f.brain_id = $2 AND f.embedding IS NOT NULL
+		 WHERE f.brain_id = $2 AND f.embedding IS NOT NULL AND f.deleted_at IS NULL
 		 ORDER BY f.embedding <=> $1
 		 LIMIT $3`,
 		v.String(), brainID, limit,
@@ -207,7 +239,7 @@ func (b *BrainDB) ListHashtags(ctx context.Context, brainID string) ([]string, e
 	rows, err := b.db.QueryContext(ctx,
 		`SELECT DISTINCT h.tag FROM brain_hashtags h
 		 JOIN brain_files f ON f.id = h.file_id
-		 WHERE f.brain_id = $1
+		 WHERE f.brain_id = $1 AND f.deleted_at IS NULL
 		 ORDER BY h.tag`, brainID,
 	)
 	if err != nil {
@@ -251,7 +283,8 @@ func (b *BrainDB) GetFileLinks(ctx context.Context, brainID string) ([]sdk.Brain
 	rows, err := b.db.QueryContext(ctx,
 		`SELECT l.source_file_id, l.target_file_id FROM brain_links l
 		 JOIN brain_files f ON f.id = l.source_file_id
-		 WHERE f.brain_id = $1`, brainID,
+		 JOIN brain_files t ON t.id = l.target_file_id
+		 WHERE f.brain_id = $1 AND f.deleted_at IS NULL AND t.deleted_at IS NULL`, brainID,
 	)
 	if err != nil {
 		return nil, err
@@ -308,6 +341,9 @@ func (b *BrainDB) GetGraph(ctx context.Context, brainID string) (*sdk.BrainGraph
 	links, err := b.GetFileLinks(ctx, brainID)
 	if err != nil {
 		return nil, fmt.Errorf("get links: %w", err)
+	}
+	if links == nil {
+		links = []sdk.BrainLink{}
 	}
 	graph.Links = links
 
@@ -379,7 +415,7 @@ func (b *BrainDB) ResolveFileIDsByTitle(ctx context.Context, brainID string, tit
 		args = append(args, title)
 	}
 	query := fmt.Sprintf(
-		`SELECT id, title FROM brain_files WHERE brain_id = $1 AND title IN (%s)`,
+		`SELECT id, title FROM brain_files WHERE brain_id = $1 AND deleted_at IS NULL AND title IN (%s)`,
 		strings.Join(placeholders, ","),
 	)
 	rows, err := b.db.QueryContext(ctx, query, args...)

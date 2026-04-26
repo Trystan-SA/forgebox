@@ -275,7 +275,16 @@ Actions:
 - **write** -- Create or update a brain file. If file_id is provided, updates existing.
   Otherwise creates new. Triggers link/hashtag parsing, embedding, graph recompute
 - **list** -- Return all file titles, IDs, hashtags, and timestamps
-- **delete** -- Remove a file and its associated links/hashtags
+- **delete** -- Soft-delete (archive) a file by setting `deleted_at = NOW()`. Archived
+  files are excluded from list/get/search/graph results and from link/hashtag
+  traversal, but their rows (and their associated links/hashtags) remain in the
+  database so they can be restored. Files stay archived for **30 days**, after
+  which the cleanup task hard-deletes them. When a file is hard-deleted, every
+  remaining `[[Title]]` reference to it inside the content of still-active sibling
+  files is stripped before deletion so links don't dangle. Restoring an archived
+  file (clearing `deleted_at`) brings the file and its links back to the active
+  graph. Cleanup is implemented as a goroutine in the gateway server that runs
+  every hour and calls `Service.PurgeArchived(retention=30d)`
 
 ### API Routes
 

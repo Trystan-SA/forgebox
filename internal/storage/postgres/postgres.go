@@ -69,6 +69,10 @@ func (b *BrainDB) migrate() error {
 
 		`CREATE INDEX IF NOT EXISTS idx_brain_files_brain ON brain_files(brain_id)`,
 
+		`ALTER TABLE brain_files ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`,
+
+		`CREATE INDEX IF NOT EXISTS idx_brain_files_active ON brain_files(brain_id) WHERE deleted_at IS NULL`,
+
 		`CREATE TABLE IF NOT EXISTS brain_links (
 			source_file_id TEXT NOT NULL REFERENCES brain_files(id) ON DELETE CASCADE,
 			target_file_id TEXT NOT NULL REFERENCES brain_files(id) ON DELETE CASCADE,

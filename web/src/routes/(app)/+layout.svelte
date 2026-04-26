@@ -15,6 +15,9 @@
 		/^\/apps\/new$/.test(page.url.pathname) ||
 		/^\/apps\/[^/]+$/.test(page.url.pathname)
 	);
+	const isFlush = $derived(
+		/^\/agents\/[^/]+\/brain$/.test(page.url.pathname)
+	);
 	let sidebarCollapsed = $state(false);
 
 	$effect(() => {
@@ -66,7 +69,7 @@
 <div class="layout">
 	<Sidebar groups={navGroups} bind:collapsed={sidebarCollapsed} />
 	<div class="layout__main">
-		<main class="layout__content" class:layout__content--fullscreen={isFullscreen}>
+		<main class="layout__content" class:layout__content--fullscreen={isFullscreen} class:layout__content--flush={isFlush}>
 			{@render children()}
 		</main>
 	</div>
@@ -96,6 +99,10 @@
 			&--fullscreen {
 				padding: 0;
 				overflow: hidden;
+			}
+
+			&--flush {
+				padding: 0;
 			}
 		}
 	}

@@ -18,30 +18,27 @@ const ArchiveRetention = 30 * 24 * time.Hour
 
 // Service orchestrates brain operations.
 type Service struct {
-	store     sdk.BrainStore
-	embedder  Embedder
-	debouncer *debouncer
+	store    sdk.BrainStore
+	embedder Embedder
 }
 
 // NewService creates a new brain service.
 func NewService(store sdk.BrainStore, embedder Embedder) *Service {
 	return &Service{
-		store:     store,
-		embedder:  embedder,
-		debouncer: newDebouncer(graphRecomputeDelay),
+		store:    store,
+		embedder: embedder,
 	}
 }
 
-// scheduleGraphRecompute debounces graph recomputation per brain.
-// Repeated mutations within the debounce window collapse into one recompute.
+// scheduleGraphRecompute recomputes the graph synchronously so the persisted
+// view stays consistent with the latest mutation. Recompute cost is O(files)
+// per brain and runs on the request path.
 func (s *Service) scheduleGraphRecompute(brainID string) {
-	s.debouncer.Trigger(brainID, func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
-		if _, err := s.ComputeGraph(ctx, brainID); err != nil {
-			slog.Error("brain graph recompute failed", "brain_id", brainID, "error", err)
-		}
-	})
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if _, err := s.ComputeGraph(ctx, brainID); err != nil {
+		slog.Error("brain graph recompute failed", "brain_id", brainID, "error", err)
+	}
 }
 
 // GetOrCreateBrain returns the brain for an automation, creating one if needed.

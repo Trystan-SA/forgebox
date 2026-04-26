@@ -5,14 +5,12 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/forgebox/forgebox/pkg/sdk"
 )
 
 const (
-	graphRecomputeDelay = 5 * time.Second
 	graphCanvasCenterX  = 500.0
 	graphCanvasCenterY  = 400.0
 	graphFallbackRadius = 250.0
@@ -171,22 +169,3 @@ func topTag(freq map[string]int) string {
 	return best
 }
 
-// debouncer fires a function once per key after a quiet period.
-type debouncer struct {
-	mu     sync.Mutex
-	timers map[string]*time.Timer
-	delay  time.Duration
-}
-
-func newDebouncer(delay time.Duration) *debouncer {
-	return &debouncer{timers: map[string]*time.Timer{}, delay: delay}
-}
-
-func (d *debouncer) Trigger(key string, fn func()) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if t, ok := d.timers[key]; ok {
-		t.Stop()
-	}
-	d.timers[key] = time.AfterFunc(d.delay, fn)
-}

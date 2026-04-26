@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { onMount, onDestroy, createEventDispatcher } from 'svelte';
+	import { onMount, onDestroy, createEventDispatcher, untrack } from 'svelte';
 	import type { SimulationNodeDatum } from 'd3-force';
 	import type { BrainGraph, GraphNode, BrainLink, GraphCluster } from '$lib/api/types';
+	import { GraphLayout } from './graph-layout';
 
 	interface Props {
 		graph: BrainGraph | null;
@@ -37,8 +38,12 @@
 		targetId: string;
 	}
 
-	let simNodes = $state<SimNode[]>([]);
-	let simLinks = $state<SimLink[]>([]);
+	// Shallow reactivity: reassigning the array (when the graph data changes)
+	// fires a signal so the templates re-render, but mutating an element's
+	// .x/.y during drag or layout does NOT — those updates go straight to the
+	// DOM via setAttribute, without triggering reactive churn.
+	let simNodes = $state.raw<SimNode[]>([]);
+	let simLinks = $state.raw<SimLink[]>([]);
 
 
 	function clusterColor(clusterId: number): string {
@@ -90,6 +95,7 @@
 
 	onDestroy(() => {
 		if (ro) ro.disconnect();
+		cancelLayout();
 		window.removeEventListener('pointermove', handleWindowPointerMove);
 		window.removeEventListener('pointerup', handleWindowPointerUp);
 		window.removeEventListener('pointercancel', handleWindowPointerUp);
@@ -103,11 +109,26 @@
 		// which would otherwise reset positions while the user is dragging.
 		if (graph && graph.nodes.length > 0) {
 			buildSimulation(graph);
+			untrack(() => startLayout());
 		} else {
+			untrack(() => cancelLayout());
 			simNodes = [];
 			simLinks = [];
 		}
 	});
+
+	// Force-directed layout engine — see graph-layout.ts.
+	const layout = new GraphLayout();
+	layout.onTick(() => applyAllPositions());
+
+	function startLayout() {
+		layout.setData(simNodes, simLinks);
+		layout.start();
+	}
+
+	function cancelLayout() {
+		layout.cancel();
+	}
 
 	function handleNodeClick(node: SimNode) {
 		dispatch('select', { file_id: node.id });
@@ -152,6 +173,8 @@
 	function handleNodePointerDown(e: PointerEvent, node: SimNode) {
 		if (e.button !== 0) return;
 		e.preventDefault();
+		// Stop any running auto-layout so it doesn't fight the user.
+		cancelLayout();
 		const p = svgPoint(e.clientX, e.clientY);
 		dragState = { node, pointerId: e.pointerId, startX: p.x, startY: p.y, moved: false };
 		// Attach listeners on window so re-renders don't lose them.
@@ -170,11 +193,10 @@
 				dragState.moved = true;
 			}
 		}
+		// simNodes is non-reactive now, so mutating directly doesn't fire
+		// signals. We update the DOM manually via setAttribute below.
 		dragState.node.x = p.x;
 		dragState.node.y = p.y;
-		// Bypass Svelte reactivity: write the transform straight to the DOM.
-		// This avoids any subtlety with reactive tracking inside keyed each
-		// blocks when the node object identity is preserved.
 		applyNodePosition(dragState.node);
 		applyLinksFor(dragState.node.id);
 	}
@@ -187,7 +209,14 @@
 		window.removeEventListener('pointermove', handleWindowPointerMove);
 		window.removeEventListener('pointerup', handleWindowPointerUp);
 		window.removeEventListener('pointercancel', handleWindowPointerUp);
-		if (!moved) handleNodeClick(node);
+		if (!moved) {
+			handleNodeClick(node);
+		} else {
+			// Pin the manually placed node so the upcoming layout pass settles
+			// the rest of the graph around it instead of pulling it back.
+			layout.setPinned(node.id, true);
+			startLayout();
+		}
 	}
 
 	function getNodeX(node: SimNode): number {
@@ -227,6 +256,27 @@
 			if (link.sourceId !== nodeId && link.targetId !== nodeId) continue;
 			const src = findNode(link.sourceId);
 			const tgt = findNode(link.targetId);
+			if (!src || !tgt) continue;
+			lines[i].setAttribute('x1', String(src.x ?? 0));
+			lines[i].setAttribute('y1', String(src.y ?? 0));
+			lines[i].setAttribute('x2', String(tgt.x ?? 0));
+			lines[i].setAttribute('y2', String(tgt.y ?? 0));
+		}
+	}
+
+	function applyAllPositions() {
+		if (!svgEl) return;
+		const byId = new Map<string, SimNode>();
+		for (const node of simNodes) {
+			byId.set(node.id, node);
+			applyNodePosition(node);
+		}
+		const lines = svgEl.querySelectorAll<SVGLineElement>('line.brain-graph__link');
+		for (let i = 0; i < lines.length; i++) {
+			const link = simLinks[i];
+			if (!link) continue;
+			const src = byId.get(link.sourceId);
+			const tgt = byId.get(link.targetId);
 			if (!src || !tgt) continue;
 			lines[i].setAttribute('x1', String(src.x ?? 0));
 			lines[i].setAttribute('y1', String(src.y ?? 0));

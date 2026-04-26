@@ -70,6 +70,15 @@ export async function updateFile(fileId: string, title: string, content: string)
 export async function deleteFile(fileId: string) {
 	await api.deleteBrainFile(currentAgentId, fileId);
 	state.files = state.files.filter((f) => f.id !== fileId);
+	if (state.graph) {
+		state.graph = {
+			...state.graph,
+			nodes: state.graph.nodes.filter((n) => n.file_id !== fileId),
+			links: state.graph.links.filter(
+				(l) => l.source_file_id !== fileId && l.target_file_id !== fileId
+			)
+		};
+	}
 	if (state.selectedFileId === fileId) {
 		clearSelection();
 	}

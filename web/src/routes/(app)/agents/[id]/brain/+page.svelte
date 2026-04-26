@@ -418,7 +418,6 @@
 		}
 
 		&__graph-pane {
-			padding: $space-4;
 			overflow: hidden;
 			border-right: 1px solid $neutral-200;
 		}
@@ -427,7 +426,6 @@
 			display: flex;
 			flex-direction: column;
 			overflow: hidden;
-			padding: $space-4;
 		}
 
 		&__editor-wrap {

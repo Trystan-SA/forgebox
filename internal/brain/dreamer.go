@@ -45,7 +45,7 @@ func (d *Dreamer) Dream(ctx context.Context, brainID string) (*sdk.DreamProposal
 
 	var fileList string
 	for _, f := range files {
-		tags, _ := d.store.GetFileHashtags(ctx, f.ID)
+		tags := ExtractHashtags(f.Content)
 		tagStr := ""
 		if len(tags) > 0 {
 			tagStr = " [tags: " + fmt.Sprintf("%v", tags) + "]"

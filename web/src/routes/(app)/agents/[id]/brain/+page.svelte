@@ -25,6 +25,9 @@
 	let showDeleteModal = $state(false);
 	let deletingFile = $state(false);
 	let deleteError = $state('');
+	let editorDirty = $state(false);
+	let editorSaveFn = $state<() => void>(() => {});
+	let showUnsavedModal = $state(false);
 
 	onMount(async () => {
 		try {
@@ -86,6 +89,36 @@
 
 	function handleGraphSelect(e: CustomEvent<{ file_id: string }>) {
 		brain.selectFile(e.detail.file_id);
+	}
+
+	function handleGraphDeselect() {
+		if (!brain.state.selectedFileId) return;
+		if (editorDirty) {
+			showUnsavedModal = true;
+			return;
+		}
+		brain.clearSelection();
+	}
+
+	function unsavedSave() {
+		editorSaveFn();
+		showUnsavedModal = false;
+		brain.clearSelection();
+	}
+
+	function unsavedDiscard() {
+		showUnsavedModal = false;
+		editorDirty = false;
+		brain.clearSelection();
+	}
+
+	function unsavedCancel() {
+		showUnsavedModal = false;
+	}
+
+	function handleUnsavedKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') unsavedCancel();
+		if (e.key === 'Enter') unsavedSave();
 	}
 
 	function handleSearchHighlight(e: CustomEvent<{ fileIds: string[] }>) {
@@ -237,23 +270,26 @@
 			</EmptyState>
 		</div>
 	{:else}
-		<div class="bp__main">
+		<div class="bp__main" class:bp__main--graph-only={!brain.state.selectedFile}>
 			<div class="bp__graph-pane">
 				<BrainGraph
 					graph={brain.state.graph}
 					selectedFileId={brain.state.selectedFileId}
 					{searchHighlights}
 					on:select={handleGraphSelect}
+					on:deselect={handleGraphDeselect}
 				/>
 			</div>
 
-			<div class="bp__editor-pane">
-				{#if brain.state.selectedFile}
+			{#if brain.state.selectedFile}
+				<div class="bp__editor-pane">
 					<div class="bp__editor-wrap">
 						<BrainEditor
 							file={brain.state.selectedFile}
 							allFiles={brain.state.files}
 							allHashtags={allHashtags()}
+							bind:dirty={editorDirty}
+							bind:saveFn={editorSaveFn}
 							on:save={handleSave}
 							on:delete={handleDelete}
 						/>
@@ -263,15 +299,8 @@
 							on:titleChange={handleTitleChange}
 						/>
 					</div>
-				{:else}
-					<div class="bp__select-hint">
-						<EmptyState
-							title="Select a file"
-							description="Click a node in the graph to open a file for editing."
-						/>
-					</div>
-				{/if}
-			</div>
+				</div>
+			{/if}
 		</div>
 	{/if}
 
@@ -341,6 +370,28 @@
 				<button type="button" class="bp__btn-delete" onclick={confirmDelete} disabled={deletingFile}>
 					{deletingFile ? 'Deleting…' : 'Delete'}
 				</button>
+			</div>
+		</div>
+	{/if}
+
+	{#if showUnsavedModal}
+		<div class="bp__modal-backdrop" onclick={unsavedCancel} role="presentation"></div>
+		<div
+			class="bp__modal"
+			role="dialog"
+			aria-modal="true"
+			aria-label="Unsaved changes"
+			onkeydown={handleUnsavedKeydown}
+			tabindex="-1"
+		>
+			<h3 class="bp__modal-title">Save changes?</h3>
+			<p class="bp__modal-text">
+				You have unsaved changes in this file. Save them before closing?
+			</p>
+			<div class="bp__modal-actions">
+				<button type="button" class="btn-secondary" onclick={unsavedCancel}>Cancel</button>
+				<button type="button" class="btn-secondary" onclick={unsavedDiscard}>Discard</button>
+				<button type="button" class="btn-primary" onclick={unsavedSave}>Save</button>
 			</div>
 		</div>
 	{/if}
@@ -486,11 +537,19 @@
 			display: grid;
 			grid-template-columns: 60% 40%;
 			overflow: hidden;
+
+			&--graph-only {
+				grid-template-columns: 1fr;
+			}
 		}
 
 		&__graph-pane {
 			overflow: hidden;
 			border-right: 1px solid $neutral-200;
+
+			.bp__main--graph-only & {
+				border-right: none;
+			}
 		}
 
 		&__editor-pane {
@@ -595,11 +654,19 @@
 			&__main {
 				grid-template-columns: 1fr;
 				grid-template-rows: 1fr 1fr;
+
+				&--graph-only {
+					grid-template-rows: 1fr;
+				}
 			}
 
 			&__graph-pane {
 				border-right: none;
 				border-bottom: 1px solid $neutral-200;
+
+				.bp__main--graph-only & {
+					border-bottom: none;
+				}
 			}
 
 			&__topbar-center {

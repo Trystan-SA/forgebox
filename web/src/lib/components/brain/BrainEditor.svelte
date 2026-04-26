@@ -34,9 +34,17 @@
 		file: BrainFile | null;
 		allFiles: BrainFile[];
 		allHashtags: string[];
+		dirty?: boolean;
+		saveFn?: () => void;
 	}
 
-	let { file, allFiles, allHashtags }: Props = $props();
+	let {
+		file,
+		allFiles,
+		allHashtags,
+		dirty = $bindable(false),
+		saveFn = $bindable<() => void>(() => {})
+	}: Props = $props();
 
 	const dispatch = createEventDispatcher<{
 		save: { title: string; content: string };
@@ -45,6 +53,7 @@
 
 	let editorContainer: HTMLDivElement;
 	let editor: Editor | null = null;
+	let initialContent = $state<string>('');
 
 	let autocomplete = $state<{
 		type: 'file' | 'hashtag';
@@ -119,6 +128,8 @@
 	function createEditor(content: string) {
 		destroyEditor();
 		if (!editorContainer) return;
+		initialContent = content;
+		dirty = false;
 
 		editor = new Editor({
 			element: editorContainer,
@@ -157,6 +168,8 @@
 				const cursor = e.state.selection.from;
 				const textBeforeCursor = e.state.doc.textBetween(0, cursor, '\n', '\n');
 				checkAutocomplete(textBeforeCursor);
+				const currentMd = htmlToMarkdown(e.getHTML());
+				dirty = currentMd !== initialContent;
 			}
 		});
 	}
@@ -271,8 +284,14 @@
 	function handleSave() {
 		if (!editor || !file) return;
 		const content = htmlToMarkdown(editor.getHTML());
+		initialContent = content;
+		dirty = false;
 		dispatch('save', { title: file.title, content });
 	}
+
+	$effect(() => {
+		saveFn = handleSave;
+	});
 
 	function handleDelete() {
 		if (!file) return;

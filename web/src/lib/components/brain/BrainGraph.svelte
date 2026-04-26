@@ -1,15 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy, createEventDispatcher } from 'svelte';
-	import {
-		forceSimulation,
-		forceLink,
-		forceManyBody,
-		forceCenter,
-		forceCollide,
-		type Simulation,
-		type SimulationNodeDatum,
-		type SimulationLinkDatum
-	} from 'd3-force';
+	import type { SimulationNodeDatum } from 'd3-force';
 	import type { BrainGraph, GraphNode, BrainLink, GraphCluster } from '$lib/api/types';
 
 	interface Props {
@@ -20,7 +11,10 @@
 
 	let { graph, selectedFileId, searchHighlights }: Props = $props();
 
-	const dispatch = createEventDispatcher<{ select: { file_id: string } }>();
+	const dispatch = createEventDispatcher<{
+		select: { file_id: string };
+		deselect: Record<string, never>;
+	}>();
 
 	let svgEl: SVGSVGElement;
 	let containerEl: HTMLDivElement;
@@ -36,15 +30,15 @@
 		y: number;
 	}
 
-	interface SimLink extends SimulationLinkDatum<SimNode> {
-		source: SimNode | string;
-		target: SimNode | string;
+	// Links store node IDs only — actual node lookups happen through `simNodes`
+	// so the line endpoints share the same reactive proxy as the dragged node.
+	interface SimLink {
+		sourceId: string;
+		targetId: string;
 	}
 
 	let simNodes = $state<SimNode[]>([]);
 	let simLinks = $state<SimLink[]>([]);
-	let simulation: Simulation<SimNode, SimLink> | null = null;
-	let tick = $state(0);
 
 
 	function clusterColor(clusterId: number): string {
@@ -53,12 +47,10 @@
 		return cluster?.color ?? '#6366f1';
 	}
 
+	// Builds the static graph: nodes positioned at server-provided coordinates,
+	// links resolved to direct node references. No automatic force-based
+	// motion — positions only change when the user drags.
 	function buildSimulation(g: BrainGraph) {
-		if (simulation) {
-			simulation.stop();
-			simulation = null;
-		}
-
 		const nodes: SimNode[] = g.nodes.map((n: GraphNode) => ({
 			id: n.file_id,
 			title: n.title,
@@ -68,35 +60,17 @@
 			y: n.y ?? height / 2
 		}));
 
-		const nodeById = new Map(nodes.map((n) => [n.id, n]));
+		const nodeIds = new Set(nodes.map((n) => n.id));
 
 		const links: SimLink[] = (g.links ?? [])
-			.map((l: BrainLink) => ({
-				source: l.source_file_id,
-				target: l.target_file_id
-			}))
-			.filter((l) => nodeById.has(l.source as string) && nodeById.has(l.target as string));
+			.filter((l) => nodeIds.has(l.source_file_id) && nodeIds.has(l.target_file_id))
+			.map((l: BrainLink): SimLink => ({
+				sourceId: l.source_file_id,
+				targetId: l.target_file_id
+			}));
 
 		simNodes = nodes;
 		simLinks = links;
-
-		simulation = forceSimulation<SimNode, SimLink>(nodes)
-			.force(
-				'link',
-				forceLink<SimNode, SimLink>(links)
-					.id((d) => d.id)
-					.strength(1)
-			)
-			.force('charge', forceManyBody<SimNode>().strength(-120))
-			.force('center', forceCenter<SimNode>(width / 2, height / 2))
-			.force('collide', forceCollide<SimNode>(18))
-			.on('tick', () => {
-				simNodes = [...nodes];
-				tick++;
-			})
-			.on('end', () => {
-				simNodes = [...nodes];
-			});
 	}
 
 	function resizeObserver() {
@@ -115,15 +89,19 @@
 	});
 
 	onDestroy(() => {
-		if (simulation) simulation.stop();
 		if (ro) ro.disconnect();
 		window.removeEventListener('pointermove', handleWindowPointerMove);
 		window.removeEventListener('pointerup', handleWindowPointerUp);
 		window.removeEventListener('pointercancel', handleWindowPointerUp);
+		window.removeEventListener('pointermove', handlePanPointerMove);
+		window.removeEventListener('pointerup', handlePanPointerUp);
+		window.removeEventListener('pointercancel', handlePanPointerUp);
 	});
 
 	$effect(() => {
-		if (graph && graph.nodes.length > 0 && width > 0 && height > 0) {
+		// Rebuild only when the graph data itself changes — not on every resize,
+		// which would otherwise reset positions while the user is dragging.
+		if (graph && graph.nodes.length > 0) {
 			buildSimulation(graph);
 		} else {
 			simNodes = [];
@@ -136,6 +114,14 @@
 	}
 
 	const DRAG_THRESHOLD = 4;
+	const MIN_ZOOM = 0.2;
+	const MAX_ZOOM = 3;
+
+	let panX = $state(0);
+	let panY = $state(0);
+	let zoom = $state(1);
+	let isPanning = $state(false);
+
 	let dragState: {
 		node: SimNode;
 		pointerId: number;
@@ -144,20 +130,31 @@
 		moved: boolean;
 	} | null = null;
 
-	function svgPoint(clientX: number, clientY: number): { x: number; y: number } {
+	let panState: {
+		pointerId: number;
+		startClientX: number;
+		startClientY: number;
+		startPanX: number;
+		startPanY: number;
+		moved: boolean;
+	} | null = null;
+
+	function clientToScreen(clientX: number, clientY: number): { x: number; y: number } {
 		const rect = svgEl.getBoundingClientRect();
 		return { x: clientX - rect.left, y: clientY - rect.top };
+	}
+
+	function svgPoint(clientX: number, clientY: number): { x: number; y: number } {
+		const s = clientToScreen(clientX, clientY);
+		return { x: (s.x - panX) / zoom, y: (s.y - panY) / zoom };
 	}
 
 	function handleNodePointerDown(e: PointerEvent, node: SimNode) {
 		if (e.button !== 0) return;
 		e.preventDefault();
 		const p = svgPoint(e.clientX, e.clientY);
-		node.fx = node.x;
-		node.fy = node.y;
 		dragState = { node, pointerId: e.pointerId, startX: p.x, startY: p.y, moved: false };
-		if (simulation) simulation.alphaTarget(0.3).restart();
-		// Attach listeners on window so {#key tick} remounts don't lose them.
+		// Attach listeners on window so re-renders don't lose them.
 		window.addEventListener('pointermove', handleWindowPointerMove);
 		window.addEventListener('pointerup', handleWindowPointerUp);
 		window.addEventListener('pointercancel', handleWindowPointerUp);
@@ -173,8 +170,6 @@
 				dragState.moved = true;
 			}
 		}
-		dragState.node.fx = p.x;
-		dragState.node.fy = p.y;
 		dragState.node.x = p.x;
 		dragState.node.y = p.y;
 		// Bypass Svelte reactivity: write the transform straight to the DOM.
@@ -192,8 +187,6 @@
 		window.removeEventListener('pointermove', handleWindowPointerMove);
 		window.removeEventListener('pointerup', handleWindowPointerUp);
 		window.removeEventListener('pointercancel', handleWindowPointerUp);
-		if (simulation) simulation.alphaTarget(0);
-		// Node stays pinned where it was dropped (fx/fy retained).
 		if (!moved) handleNodeClick(node);
 	}
 
@@ -205,10 +198,7 @@
 		return node.y ?? 0;
 	}
 
-	// Returns a transform string that depends on `tick` so Svelte re-evaluates
-	// the attribute whenever the simulation/drag bumps the tick counter,
-	// even though node x/y are mutated on a non-reactive object.
-	function nodeTransform(node: SimNode, _tick: number): string {
+	function nodeTransform(node: SimNode): string {
 		return `translate(${node.x ?? 0},${node.y ?? 0})`;
 	}
 
@@ -234,11 +224,10 @@
 		for (let i = 0; i < lines.length; i++) {
 			const link = simLinks[i];
 			if (!link) continue;
-			const src = link.source as SimNode;
-			const tgt = link.target as SimNode;
+			if (link.sourceId !== nodeId && link.targetId !== nodeId) continue;
+			const src = findNode(link.sourceId);
+			const tgt = findNode(link.targetId);
 			if (!src || !tgt) continue;
-			if (typeof src !== 'object' || typeof tgt !== 'object') continue;
-			if (src.id !== nodeId && tgt.id !== nodeId) continue;
 			lines[i].setAttribute('x1', String(src.x ?? 0));
 			lines[i].setAttribute('y1', String(src.y ?? 0));
 			lines[i].setAttribute('x2', String(tgt.x ?? 0));
@@ -246,12 +235,64 @@
 		}
 	}
 
-	function getLinkSourceNode(link: SimLink): SimNode {
-		return link.source as SimNode;
+	function handleBackgroundPointerDown(e: PointerEvent) {
+		if (e.target !== svgEl) return;
+		if (e.button !== 0) return;
+		e.preventDefault();
+		panState = {
+			pointerId: e.pointerId,
+			startClientX: e.clientX,
+			startClientY: e.clientY,
+			startPanX: panX,
+			startPanY: panY,
+			moved: false
+		};
+		window.addEventListener('pointermove', handlePanPointerMove);
+		window.addEventListener('pointerup', handlePanPointerUp);
+		window.addEventListener('pointercancel', handlePanPointerUp);
 	}
 
-	function getLinkTargetNode(link: SimLink): SimNode {
-		return link.target as SimNode;
+	function handlePanPointerMove(e: PointerEvent) {
+		if (!panState || e.pointerId !== panState.pointerId) return;
+		const dx = e.clientX - panState.startClientX;
+		const dy = e.clientY - panState.startClientY;
+		if (!panState.moved && dx * dx + dy * dy >= DRAG_THRESHOLD * DRAG_THRESHOLD) {
+			panState.moved = true;
+		}
+		if (panState.moved) {
+			isPanning = true;
+			panX = panState.startPanX + dx;
+			panY = panState.startPanY + dy;
+		}
+	}
+
+	function handlePanPointerUp(e: PointerEvent) {
+		if (!panState || e.pointerId !== panState.pointerId) return;
+		const moved = panState.moved;
+		panState = null;
+		isPanning = false;
+		window.removeEventListener('pointermove', handlePanPointerMove);
+		window.removeEventListener('pointerup', handlePanPointerUp);
+		window.removeEventListener('pointercancel', handlePanPointerUp);
+		if (!moved) dispatch('deselect', {} as never);
+	}
+
+	function handleWheel(e: WheelEvent) {
+		e.preventDefault();
+		const screen = clientToScreen(e.clientX, e.clientY);
+		const worldX = (screen.x - panX) / zoom;
+		const worldY = (screen.y - panY) / zoom;
+		const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+		const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * factor));
+		panX = screen.x - worldX * newZoom;
+		panY = screen.y - worldY * newZoom;
+		zoom = newZoom;
+	}
+
+	function findNode(id: string): SimNode | undefined {
+		// Read through simNodes (a $state proxy) so endpoint expressions share
+		// the same reactive proxy as the node mutated during drag.
+		return simNodes.find((n) => n.id === id);
 	}
 </script>
 
@@ -267,55 +308,65 @@
 			<p>No graph data yet</p>
 		</div>
 	{:else}
-		<svg bind:this={svgEl} {width} {height} class="brain-graph__svg">
-			<g class="links">
-				{#each simLinks as link}
-					{@const src = getLinkSourceNode(link)}
-					{@const tgt = getLinkTargetNode(link)}
-					{#if src && tgt}
-						<line
-							x1={getNodeX(src)}
-							y1={getNodeY(src)}
-							x2={getNodeX(tgt)}
-							y2={getNodeY(tgt)}
-							class="brain-graph__link"
-						/>
-					{/if}
-				{/each}
-			</g>
-			<g class="nodes">
-				{#each simNodes as node (node.id)}
-					{@const isSelected = selectedFileId === node.id}
-					{@const isHighlighted = searchHighlights.includes(node.id)}
-					{@const color = clusterColor(node.cluster_id)}
-					<g
-						class="brain-graph__node-group"
-						transform={nodeTransform(node, tick)}
-						use:registerNodeRef={node.id}
-						onpointerdown={(e) => handleNodePointerDown(e, node)}
-						role="button"
-						tabindex="0"
-						onkeydown={(e) => e.key === 'Enter' && handleNodeClick(node)}
-					>
-						{#if isHighlighted}
-							<circle r="16" fill={color} opacity="0.25" class="brain-graph__pulse" />
+		<svg
+			bind:this={svgEl}
+			{width}
+			{height}
+			class="brain-graph__svg"
+			class:brain-graph__svg--panning={isPanning}
+			onpointerdown={handleBackgroundPointerDown}
+			onwheel={handleWheel}
+		>
+			<g class="brain-graph__viewport" transform="translate({panX},{panY}) scale({zoom})">
+				<g class="links">
+					{#each simLinks as link}
+						{@const src = findNode(link.sourceId)}
+						{@const tgt = findNode(link.targetId)}
+						{#if src && tgt}
+							<line
+								x1={getNodeX(src)}
+								y1={getNodeY(src)}
+								x2={getNodeX(tgt)}
+								y2={getNodeY(tgt)}
+								class="brain-graph__link"
+							/>
 						{/if}
-						{#if isSelected}
-							<circle r="12" fill="none" stroke="#6366f1" stroke-width="3" />
-						{/if}
-						<circle
-							r="8"
-							fill={color}
-							class="brain-graph__node"
-							class:brain-graph__node--selected={isSelected}
-						/>
-						<text
-							y="22"
-							text-anchor="middle"
-							class="brain-graph__node-label"
-						>{node.title}</text>
-					</g>
-				{/each}
+					{/each}
+				</g>
+				<g class="nodes">
+					{#each simNodes as node (node.id)}
+						{@const isSelected = selectedFileId === node.id}
+						{@const isHighlighted = searchHighlights.includes(node.id)}
+						{@const color = clusterColor(node.cluster_id)}
+						<g
+							class="brain-graph__node-group"
+							transform={nodeTransform(node)}
+							use:registerNodeRef={node.id}
+							onpointerdown={(e) => handleNodePointerDown(e, node)}
+							role="button"
+							tabindex="0"
+							onkeydown={(e) => e.key === 'Enter' && handleNodeClick(node)}
+						>
+							{#if isHighlighted}
+								<circle r="16" fill={color} opacity="0.25" class="brain-graph__pulse" />
+							{/if}
+							{#if isSelected}
+								<circle r="12" fill="none" stroke="#6366f1" stroke-width="3" />
+							{/if}
+							<circle
+								r="8"
+								fill={color}
+								class="brain-graph__node"
+								class:brain-graph__node--selected={isSelected}
+							/>
+							<text
+								y="22"
+								text-anchor="middle"
+								class="brain-graph__node-label"
+							>{node.title}</text>
+						</g>
+					{/each}
+				</g>
 			</g>
 
 			{#if graph}
@@ -347,6 +398,12 @@
 
 		&__svg {
 			display: block;
+			cursor: grab;
+			touch-action: none;
+
+			&--panning {
+				cursor: grabbing;
+			}
 		}
 
 		&__empty {

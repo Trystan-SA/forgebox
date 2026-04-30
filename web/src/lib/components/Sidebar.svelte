@@ -21,9 +21,10 @@
 		groups: NavGroup[];
 		title?: string;
 		collapsed?: boolean;
+		footerLink?: NavItem;
 	}
 
-	let { groups, title = 'ForgeBox', collapsed = $bindable(false) }: Props = $props();
+	let { groups, title = 'ForgeBox', collapsed = $bindable(false), footerLink }: Props = $props();
 
 	function isActive(href: string, exact = false): boolean {
 		if (exact) return page.url.pathname === href;
@@ -124,6 +125,34 @@
 			</div>
 		{/each}
 	</nav>
+
+	{#if footerLink}
+		<div class="sb__pre-foot">
+			<a
+				href={footerLink.href}
+				class="sb__link"
+				class:sb__link--active={isActive(footerLink.href)}
+			>
+				<span class="sb__link-icon">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d={footerLink.icon} /></svg>
+					{#if footerLink.warning && collapsed}
+						<span class="sb__warn-dot" aria-hidden="true"></span>
+					{/if}
+				</span>
+				{#if !collapsed}
+					<span class="sb__link-name">{footerLink.name}</span>
+					{#if footerLink.warning}
+						<span class="sb__warn" title={footerLink.warningLabel ?? `${footerLink.name} needs attention`} aria-label={footerLink.warningLabel ?? `${footerLink.name} needs attention`}>
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+						</span>
+					{/if}
+				{/if}
+				{#if collapsed}
+					<span class="sb__tip">{footerLink.warning ? `${footerLink.name} — ${footerLink.warningLabel ?? 'needs attention'}` : footerLink.name}</span>
+				{/if}
+			</a>
+		</div>
+	{/if}
 
 	<div class="sb__foot">
 		{#if $currentUser}
@@ -464,6 +493,16 @@
 			background: rgba(255, 255, 255, 0.15);
 			flex-shrink: 0;
 			transition: all $transition-fast;
+		}
+
+		&__pre-foot {
+			padding: 0 $space-2 $space-2;
+			flex-shrink: 0;
+
+			.sb--c & {
+				align-items: center;
+				padding: 0 $space-2 $space-2;
+			}
 		}
 
 		&__foot {

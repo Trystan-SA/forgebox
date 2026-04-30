@@ -9,7 +9,6 @@
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 
-	// Filters
 	let userId = $state('');
 	let decision = $state<'all' | 'allow' | 'deny'>('all');
 	let dateFrom = $state('');
@@ -36,87 +35,85 @@
 	});
 </script>
 
-<div class="page">
-	<div class="page__header">
-		<h1>Audit Log</h1>
-		<p>Track all tool calls and permission decisions</p>
-	</div>
-
+<section class="section">
+	<h2>Audit Log</h2>
+	<p class="section__hint">Track all tool calls and permission decisions</p>
 	<div class="filters">
-		<label class="filter">
-			<span>User ID</span>
-			<input type="text" placeholder="Filter by user..." bind:value={userId} />
-		</label>
-		<label class="filter">
-			<span>Decision</span>
-			<select bind:value={decision}>
-				<option value="all">All</option>
-				<option value="allow">Allow</option>
-				<option value="deny">Deny</option>
-			</select>
-		</label>
-		<label class="filter">
-			<span>From</span>
-			<input type="text" placeholder="YYYY-MM-DD" bind:value={dateFrom} />
-		</label>
-		<label class="filter">
-			<span>To</span>
-			<input type="text" placeholder="YYYY-MM-DD" bind:value={dateTo} />
-		</label>
-	</div>
-
-	{#if loading}
-		<p class="text-muted">Loading...</p>
-	{:else if error}
-		<p class="text-error">Error: {error}</p>
-	{:else if filtered.length === 0}
-		<EmptyState
-			title="No audit entries found"
-			description="Audit entries will appear here when tools are executed."
-		/>
-	{:else}
-		<div class="table-wrap">
-			<table class="table">
-				<thead>
-					<tr>
-						<th>Timestamp</th>
-						<th>User</th>
-						<th>Action</th>
-						<th>Tool</th>
-						<th>Decision</th>
-						<th>Reason</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each filtered as entry}
-						<tr>
-							<td class="table__nowrap table__muted">
-								{format(new Date(entry.timestamp), 'MMM d, yyyy HH:mm:ss')}
-							</td>
-							<td class="table__mono">{entry.user_id.slice(0, 8)}</td>
-							<td>{entry.action}</td>
-							<td class="table__mono">{entry.tool ?? '-'}</td>
-							<td>
-								<span class="decision" class:decision--allow={entry.decision === 'allow'} class:decision--deny={entry.decision === 'deny'}>
-									{entry.decision}
-								</span>
-							</td>
-							<td class="table__truncate table__muted">{entry.reason ?? '-'}</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
-	{/if}
+	<label class="filter">
+		<span>User ID</span>
+		<input type="text" placeholder="Filter by user..." bind:value={userId} />
+	</label>
+	<label class="filter">
+		<span>Decision</span>
+		<select bind:value={decision}>
+			<option value="all">All</option>
+			<option value="allow">Allow</option>
+			<option value="deny">Deny</option>
+		</select>
+	</label>
+	<label class="filter">
+		<span>From</span>
+		<input type="text" placeholder="YYYY-MM-DD" bind:value={dateFrom} />
+	</label>
+	<label class="filter">
+		<span>To</span>
+		<input type="text" placeholder="YYYY-MM-DD" bind:value={dateTo} />
+	</label>
 </div>
 
-<style lang="scss">
-	.page {
-		&__header {
-			margin-bottom: $space-8;
+{#if loading}
+	<p class="text-muted">Loading...</p>
+{:else if error}
+	<p class="text-error">Error: {error}</p>
+{:else if filtered.length === 0}
+	<EmptyState
+		title="No audit entries found"
+		description="Audit entries will appear here when tools are executed."
+	/>
+{:else}
+	<div class="table-wrap">
+		<table class="table">
+			<thead>
+				<tr>
+					<th>Timestamp</th>
+					<th>User</th>
+					<th>Action</th>
+					<th>Tool</th>
+					<th>Decision</th>
+					<th>Reason</th>
+				</tr>
+			</thead>
+			<tbody>
+				{#each filtered as entry}
+					<tr>
+						<td class="table__nowrap table__muted">
+							{format(new Date(entry.timestamp), 'MMM d, yyyy HH:mm:ss')}
+						</td>
+						<td class="table__mono">{entry.user_id.slice(0, 8)}</td>
+						<td>{entry.action}</td>
+						<td class="table__mono">{entry.tool ?? '-'}</td>
+						<td>
+							<span class="decision" class:decision--allow={entry.decision === 'allow'} class:decision--deny={entry.decision === 'deny'}>
+								{entry.decision}
+							</span>
+						</td>
+						<td class="table__truncate table__muted">{entry.reason ?? '-'}</td>
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+	</div>
+{/if}
+</section>
 
-			h1 { font-size: $text-2xl; font-weight: $font-bold; color: $neutral-900; }
-			p { margin-top: $space-1; font-size: $text-sm; color: $neutral-500; }
+<style lang="scss">
+	.section {
+		h2 { margin-bottom: $space-4; }
+
+		&__hint {
+			margin: -$space-2 0 $space-4;
+			font-size: $text-sm;
+			color: $neutral-500;
 		}
 	}
 

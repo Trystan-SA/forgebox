@@ -115,19 +115,6 @@
 		});
 	});
 
-	const counts = $derived.by(() => {
-		const c: Record<Role | 'total' | 'invited', number> = {
-			total: members.length,
-			invited: members.filter((m) => m.status === 'invited').length,
-			owner: 0,
-			admin: 0,
-			editor: 0,
-			viewer: 0
-		};
-		for (const m of members) c[m.role]++;
-		return c;
-	});
-
 	function initials(name: string): string {
 		return name
 			.split(/\s+/)
@@ -249,58 +236,14 @@
 
 <svelte:window onkeydown={onKey} />
 
-<div class="team">
-	<header class="hero">
-		<div class="hero__grid" aria-hidden="true"></div>
-		<div class="hero__wrap">
-			<div class="hero__inner">
-				<div class="hero__copy">
-					<span class="hero__eyebrow">// access&nbsp;control</span>
-					<h1 class="hero__title">Team</h1>
-					<p class="hero__sub">Invite teammates, assign roles, and manage who can reach what.</p>
-				</div>
-				<button type="button" class="invite-btn" onclick={openInvite}>
-					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-					<span>Invite member</span>
-				</button>
-			</div>
-		</div>
-
-		<div class="stats">
-			<button
-				type="button"
-				class="stats__cell"
-				class:stats__cell--on={filter === 'all'}
-				onclick={() => { filter = 'all'; }}
-			>
-				<span class="stats__num">{counts.total}</span>
-				<span class="stats__lbl">members</span>
-			</button>
-			{#each roleOrder as r}
-				<button
-					type="button"
-					class="stats__cell stats__cell--{roleMeta[r].tone}"
-					class:stats__cell--on={filter === r}
-					onclick={() => { filter = filter === r ? 'all' : r; }}
-				>
-					<span class="stats__num">{counts[r]}</span>
-					<span class="stats__lbl">{roleMeta[r].label.toLowerCase()}</span>
-				</button>
-			{/each}
-			<button
-				type="button"
-				class="stats__cell stats__cell--pending"
-				class:stats__cell--on={filter === 'pending'}
-				onclick={() => { filter = filter === 'pending' ? 'all' : 'pending'; }}
-			>
-				<span class="stats__num">{counts.invited}</span>
-				<span class="stats__lbl">pending</span>
-			</button>
-		</div>
-	</header>
-
-	<div class="content">
+<section class="section">
+	<h2>Team</h2>
+	<p class="section__hint">Invite teammates, assign roles, and manage access.</p>
 	<div class="toolbar">
+		<button type="button" class="invite-btn" onclick={openInvite}>
+			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+			<span>Invite member</span>
+		</button>
 		<label class="search">
 			<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
 			<input
@@ -442,8 +385,7 @@
 			{/each}
 		{/if}
 	</div>
-	</div>
-</div>
+</section>
 
 {#if drawerOpen}
 	<button class="drawer-scrim" type="button" onclick={closeDrawer} aria-label="Close"></button>
@@ -525,184 +467,33 @@
 	$tone-teal: #0d9488;
 	$tone-slate: $neutral-500;
 
-	.team {
-		padding-bottom: $space-16;
-	}
+	.section {
+		h2 { margin-bottom: $space-4; }
 
-	.content {
-		max-width: 1180px;
-		margin: 0 auto;
-		padding: 0 $space-6;
-	}
-
-	/* ---------- HERO ---------- */
-	.hero {
-		position: relative;
-		margin: (-$space-8) (-$space-6) $space-6;
-		padding-top: $space-8;
-		background: linear-gradient(180deg, $neutral-900 0%, $neutral-800 100%);
-		color: $neutral-0;
-		overflow: hidden;
-
-		&__grid {
-			position: absolute;
-			inset: 0;
-			background-image:
-				linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
-				linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
-			background-size: 48px 48px;
-			mask-image: radial-gradient(ellipse at 50% 0%, black 0%, transparent 75%);
-		}
-
-		&__wrap {
-			max-width: 1180px;
-			margin: 0 auto;
-			padding: 0 $space-6;
-			position: relative;
-		}
-
-		&__inner {
-			position: relative;
-			display: flex;
-			justify-content: space-between;
-			align-items: flex-end;
-			gap: $space-6;
-			padding-bottom: $space-8;
-		}
-
-		&__copy {
-			max-width: 640px;
-		}
-
-		&__eyebrow {
-			display: inline-block;
-			font-family: $font-mono;
-			font-size: 10px;
-			font-weight: $font-bold;
-			letter-spacing: 0.2em;
-			color: $primary-300;
-			text-transform: uppercase;
-			margin-bottom: $space-2;
-		}
-
-		&__title {
-			font-size: 2.75rem;
-			font-weight: 800;
-			letter-spacing: -0.035em;
-			line-height: 1;
-			background: linear-gradient(180deg, $neutral-0, $neutral-400);
-			-webkit-background-clip: text;
-			background-clip: text;
-			color: transparent;
-		}
-
-		&__sub {
-			margin-top: $space-3;
+		&__hint {
+			margin: -$space-2 0 $space-4;
 			font-size: $text-sm;
-			line-height: 1.55;
-			color: rgba(255, 255, 255, 0.55);
+			color: $neutral-500;
 		}
 	}
 
 	.invite-btn {
 		@include flex-center;
 		gap: $space-2;
-		padding: 11px $space-5;
+		padding: 9px $space-4;
 		font-size: $text-sm;
 		font-weight: $font-semibold;
-		color: $neutral-900;
-		background: $neutral-0;
+		color: $neutral-0;
+		background: $primary-500;
 		border: none;
-		border-radius: 999px;
+		border-radius: $radius-md;
 		cursor: pointer;
-		box-shadow: 0 10px 30px -12px rgba(255, 255, 255, 0.3);
-		transition: transform $transition-fast, box-shadow $transition-fast;
+		transition: background $transition-fast;
 		flex-shrink: 0;
 
-		&:hover {
-			transform: translateY(-1px);
-			box-shadow: 0 14px 40px -12px rgba(255, 255, 255, 0.45);
-		}
+		&:hover { background: $primary-600; }
 
-		svg { color: $primary-600; }
-	}
-
-	.stats {
-		position: relative;
-		display: grid;
-		grid-template-columns: repeat(6, 1fr);
-		gap: 0;
-		max-width: 1180px;
-		margin: 0 auto;
-		padding: 0 $space-6;
-		border-top: 1px solid rgba(255, 255, 255, 0.07);
-
-		&__cell {
-			position: relative;
-			display: flex;
-			flex-direction: column;
-			align-items: flex-start;
-			gap: 4px;
-			padding: $space-4 $space-5;
-			background: transparent;
-			border: none;
-			border-right: 1px solid rgba(255, 255, 255, 0.05);
-			color: inherit;
-			cursor: pointer;
-			text-align: left;
-			transition: background $transition-fast;
-			font-family: inherit;
-
-			&:last-child { border-right: none; }
-
-			&:hover {
-				background: rgba(255, 255, 255, 0.03);
-			}
-
-			&--on {
-				background: rgba(255, 255, 255, 0.06);
-
-				&::after {
-					content: '';
-					position: absolute;
-					left: 0;
-					right: 0;
-					bottom: 0;
-					height: 2px;
-					background: $primary-400;
-				}
-			}
-
-			&--amber.stats__cell--on::after { background: $warning-500; }
-			&--teal.stats__cell--on::after { background: $tone-teal; }
-			&--slate.stats__cell--on::after { background: $neutral-400; }
-			&--indigo.stats__cell--on::after { background: $primary-400; }
-			&--pending.stats__cell--on::after { background: $warning-500; }
-		}
-
-		&__num {
-			font-size: 1.75rem;
-			font-weight: 700;
-			font-family: $font-mono;
-			letter-spacing: -0.02em;
-			color: $neutral-0;
-			line-height: 1;
-
-			.stats__cell--amber & { color: #fbbf24; }
-			.stats__cell--teal & { color: #5eead4; }
-			.stats__cell--slate & { color: $neutral-300; }
-			.stats__cell--indigo & { color: $primary-300; }
-			.stats__cell--pending & { color: $warning-500; }
-		}
-
-		&__lbl {
-			font-family: $font-mono;
-			font-size: 10px;
-			font-weight: $font-medium;
-			letter-spacing: 0.14em;
-			text-transform: uppercase;
-			color: rgba(255, 255, 255, 0.45);
-		}
+		svg { color: $neutral-0; }
 	}
 
 	/* ---------- TOOLBAR ---------- */
@@ -1344,20 +1135,6 @@
 		.row {
 			grid-template-columns: minmax(200px, 2fr) 140px 120px 100px 48px;
 			padding: $space-3 $space-4;
-		}
-
-		.hero {
-			&__title { font-size: 2.25rem; }
-		}
-
-		.stats {
-			grid-template-columns: repeat(3, 1fr);
-
-			&__cell {
-				border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-
-				&:nth-child(3n) { border-right: none; }
-			}
 		}
 	}
 </style>

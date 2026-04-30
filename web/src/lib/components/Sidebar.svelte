@@ -8,6 +8,8 @@
 		href: string;
 		icon: string;
 		children?: NavItem[];
+		warning?: boolean;
+		warningLabel?: string;
 	}
 
 	interface NavGroup {
@@ -89,15 +91,23 @@
 					>
 						<span class="sb__link-icon">
 							<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d={item.icon} /></svg>
+							{#if item.warning && collapsed}
+								<span class="sb__warn-dot" aria-hidden="true"></span>
+							{/if}
 						</span>
 						{#if !collapsed}
 							<span class="sb__link-name">{item.name}</span>
+							{#if item.warning}
+								<span class="sb__warn" title={item.warningLabel ?? `${item.name} needs attention`} aria-label={item.warningLabel ?? `${item.name} needs attention`}>
+									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+								</span>
+							{/if}
 							{#if item.children}
 								<svg class="sb__chevron" class:sb__chevron--open={isExpanded(item)} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6" /></svg>
 							{/if}
 						{/if}
 						{#if collapsed}
-							<span class="sb__tip">{item.name}</span>
+							<span class="sb__tip">{item.warning ? `${item.name} — ${item.warningLabel ?? 'needs attention'}` : item.name}</span>
 						{/if}
 					</a>
 					{#if !collapsed && item.children && isExpanded(item)}
@@ -322,11 +332,35 @@
 
 		&__link-icon {
 			@include flex-center;
+			position: relative;
 			width: 20px;
 			height: 20px;
 			flex-shrink: 0;
 
 			svg { display: block; }
+		}
+
+		&__warn {
+			@include flex-center;
+			flex-shrink: 0;
+			color: $warning-500;
+			margin-left: auto;
+
+			svg {
+				display: block;
+				filter: drop-shadow(0 0 4px rgba($warning-500, 0.45));
+			}
+		}
+
+		&__warn-dot {
+			position: absolute;
+			top: -2px;
+			right: -2px;
+			width: 8px;
+			height: 8px;
+			border-radius: 50%;
+			background: $warning-500;
+			box-shadow: 0 0 0 2px $sb-bg, 0 0 6px rgba($warning-500, 0.6);
 		}
 
 		&__link-name {

@@ -34,9 +34,16 @@ const (
 )
 
 // PluginMeta contains metadata about a loaded plugin.
+//
+// ID is set for DB-backed entries (so the UI can target them for deletion) and
+// empty for built-ins loaded from config. ProviderType identifies the plugin
+// implementation (e.g. "anthropic-subscription") for DB-backed providers whose
+// Name is a user-supplied display label distinct from the type.
 type PluginMeta struct {
-	Name    string     `json:"name"`
-	Version string     `json:"version"`
-	Type    PluginType `json:"type"`
-	Builtin bool       `json:"builtin"`
+	Name         string     `json:"name"`
+	Version      string     `json:"version"`
+	Type         PluginType `json:"type"`
+	Builtin      bool       `json:"builtin"`
+	ID           string     `json:"id,omitempty"`
+	ProviderType string     `json:"provider_type,omitempty"`
 }

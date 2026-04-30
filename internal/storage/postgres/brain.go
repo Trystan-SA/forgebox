@@ -12,10 +12,11 @@ import (
 	"github.com/forgebox/forgebox/pkg/sdk"
 )
 
-// Verify BrainDB implements BrainStore.
-var _ sdk.BrainStore = (*BrainDB)(nil)
+// Verify Store implements BrainStore (and StoragePlugin via storage.go).
+var _ sdk.BrainStore = (*Store)(nil)
+var _ sdk.StoragePlugin = (*Store)(nil)
 
-func (b *BrainDB) CreateBrain(ctx context.Context, brain *sdk.BrainRecord) error {
+func (b *Store) CreateBrain(ctx context.Context, brain *sdk.BrainRecord) error {
 	_, err := b.db.ExecContext(ctx,
 		`INSERT INTO brains (id, automation_id, embedding_provider, embedding_model, embedding_dimension, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
@@ -25,7 +26,7 @@ func (b *BrainDB) CreateBrain(ctx context.Context, brain *sdk.BrainRecord) error
 	return err
 }
 
-func (b *BrainDB) GetBrain(ctx context.Context, id string) (*sdk.BrainRecord, error) {
+func (b *Store) GetBrain(ctx context.Context, id string) (*sdk.BrainRecord, error) {
 	var rec sdk.BrainRecord
 	err := b.db.QueryRowContext(ctx,
 		`SELECT id, automation_id, embedding_provider, embedding_model, embedding_dimension, created_at, updated_at
@@ -38,7 +39,7 @@ func (b *BrainDB) GetBrain(ctx context.Context, id string) (*sdk.BrainRecord, er
 	return &rec, nil
 }
 
-func (b *BrainDB) GetBrainByAutomation(ctx context.Context, automationID string) (*sdk.BrainRecord, error) {
+func (b *Store) GetBrainByAutomation(ctx context.Context, automationID string) (*sdk.BrainRecord, error) {
 	var rec sdk.BrainRecord
 	err := b.db.QueryRowContext(ctx,
 		`SELECT id, automation_id, embedding_provider, embedding_model, embedding_dimension, created_at, updated_at
@@ -51,7 +52,7 @@ func (b *BrainDB) GetBrainByAutomation(ctx context.Context, automationID string)
 	return &rec, nil
 }
 
-func (b *BrainDB) UpdateBrain(ctx context.Context, brain *sdk.BrainRecord) error {
+func (b *Store) UpdateBrain(ctx context.Context, brain *sdk.BrainRecord) error {
 	brain.UpdatedAt = time.Now()
 	_, err := b.db.ExecContext(ctx,
 		`UPDATE brains SET embedding_provider=$1, embedding_model=$2, embedding_dimension=$3, updated_at=$4 WHERE id=$5`,
@@ -60,12 +61,12 @@ func (b *BrainDB) UpdateBrain(ctx context.Context, brain *sdk.BrainRecord) error
 	return err
 }
 
-func (b *BrainDB) DeleteBrain(ctx context.Context, id string) error {
+func (b *Store) DeleteBrain(ctx context.Context, id string) error {
 	_, err := b.db.ExecContext(ctx, `DELETE FROM brains WHERE id = $1`, id)
 	return err
 }
 
-func (b *BrainDB) CreateFile(ctx context.Context, file *sdk.BrainFile) error {
+func (b *Store) CreateFile(ctx context.Context, file *sdk.BrainFile) error {
 	var embeddingStr *string
 	if file.Embedding != nil {
 		v := pgvector.NewVector(file.Embedding)
@@ -81,7 +82,7 @@ func (b *BrainDB) CreateFile(ctx context.Context, file *sdk.BrainFile) error {
 	return err
 }
 
-func (b *BrainDB) UpdateFile(ctx context.Context, file *sdk.BrainFile) error {
+func (b *Store) UpdateFile(ctx context.Context, file *sdk.BrainFile) error {
 	file.UpdatedAt = time.Now()
 	var embeddingStr *string
 	if file.Embedding != nil {
@@ -96,7 +97,7 @@ func (b *BrainDB) UpdateFile(ctx context.Context, file *sdk.BrainFile) error {
 	return err
 }
 
-func (b *BrainDB) DeleteFile(ctx context.Context, fileID string) error {
+func (b *Store) DeleteFile(ctx context.Context, fileID string) error {
 	_, err := b.db.ExecContext(ctx,
 		`UPDATE brain_files SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL`,
 		fileID,
@@ -104,12 +105,12 @@ func (b *BrainDB) DeleteFile(ctx context.Context, fileID string) error {
 	return err
 }
 
-func (b *BrainDB) HardDeleteFile(ctx context.Context, fileID string) error {
+func (b *Store) HardDeleteFile(ctx context.Context, fileID string) error {
 	_, err := b.db.ExecContext(ctx, `DELETE FROM brain_files WHERE id = $1`, fileID)
 	return err
 }
 
-func (b *BrainDB) ListExpiredArchivedFiles(ctx context.Context, before time.Time) ([]*sdk.BrainFile, error) {
+func (b *Store) ListExpiredArchivedFiles(ctx context.Context, before time.Time) ([]*sdk.BrainFile, error) {
 	rows, err := b.db.QueryContext(ctx,
 		`SELECT id, brain_id, title, content, cluster_id, created_at, updated_at, created_by
 		 FROM brain_files
@@ -133,7 +134,7 @@ func (b *BrainDB) ListExpiredArchivedFiles(ctx context.Context, before time.Time
 	return files, rows.Err()
 }
 
-func (b *BrainDB) GetFile(ctx context.Context, fileID string) (*sdk.BrainFile, error) {
+func (b *Store) GetFile(ctx context.Context, fileID string) (*sdk.BrainFile, error) {
 	var rec sdk.BrainFile
 	err := b.db.QueryRowContext(ctx,
 		`SELECT id, brain_id, title, content, cluster_id, created_at, updated_at, created_by
@@ -146,7 +147,7 @@ func (b *BrainDB) GetFile(ctx context.Context, fileID string) (*sdk.BrainFile, e
 	return &rec, nil
 }
 
-func (b *BrainDB) ListFiles(ctx context.Context, brainID string) ([]*sdk.BrainFile, error) {
+func (b *Store) ListFiles(ctx context.Context, brainID string) ([]*sdk.BrainFile, error) {
 	rows, err := b.db.QueryContext(ctx,
 		`SELECT id, brain_id, title, content, cluster_id, created_at, updated_at, created_by
 		 FROM brain_files WHERE brain_id = $1 AND deleted_at IS NULL ORDER BY created_at`, brainID,
@@ -168,7 +169,7 @@ func (b *BrainDB) ListFiles(ctx context.Context, brainID string) ([]*sdk.BrainFi
 	return files, rows.Err()
 }
 
-func (b *BrainDB) SearchByEmbedding(ctx context.Context, brainID string, vec []float32, limit int) ([]*sdk.BrainFileWithMeta, error) {
+func (b *Store) SearchByEmbedding(ctx context.Context, brainID string, vec []float32, limit int) ([]*sdk.BrainFileWithMeta, error) {
 	v := pgvector.NewVector(vec)
 	rows, err := b.db.QueryContext(ctx,
 		`SELECT f.id, f.brain_id, f.title, f.content, f.cluster_id, f.created_at, f.updated_at, f.created_by,
@@ -196,7 +197,7 @@ func (b *BrainDB) SearchByEmbedding(ctx context.Context, brainID string, vec []f
 	return files, rows.Err()
 }
 
-func (b *BrainDB) SetFileHashtags(ctx context.Context, fileID string, tags []string) error {
+func (b *Store) SetFileHashtags(ctx context.Context, fileID string, tags []string) error {
 	tx, err := b.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -217,7 +218,7 @@ func (b *BrainDB) SetFileHashtags(ctx context.Context, fileID string, tags []str
 	return tx.Commit()
 }
 
-func (b *BrainDB) GetFileHashtags(ctx context.Context, fileID string) ([]string, error) {
+func (b *Store) GetFileHashtags(ctx context.Context, fileID string) ([]string, error) {
 	rows, err := b.db.QueryContext(ctx, `SELECT tag FROM brain_hashtags WHERE file_id = $1 ORDER BY tag`, fileID)
 	if err != nil {
 		return nil, err
@@ -235,7 +236,7 @@ func (b *BrainDB) GetFileHashtags(ctx context.Context, fileID string) ([]string,
 	return tags, rows.Err()
 }
 
-func (b *BrainDB) ListHashtags(ctx context.Context, brainID string) ([]string, error) {
+func (b *Store) ListHashtags(ctx context.Context, brainID string) ([]string, error) {
 	rows, err := b.db.QueryContext(ctx,
 		`SELECT DISTINCT h.tag FROM brain_hashtags h
 		 JOIN brain_files f ON f.id = h.file_id
@@ -258,7 +259,7 @@ func (b *BrainDB) ListHashtags(ctx context.Context, brainID string) ([]string, e
 	return tags, rows.Err()
 }
 
-func (b *BrainDB) SetFileLinks(ctx context.Context, sourceFileID string, targetFileIDs []string) error {
+func (b *Store) SetFileLinks(ctx context.Context, sourceFileID string, targetFileIDs []string) error {
 	tx, err := b.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -279,7 +280,7 @@ func (b *BrainDB) SetFileLinks(ctx context.Context, sourceFileID string, targetF
 	return tx.Commit()
 }
 
-func (b *BrainDB) GetFileLinks(ctx context.Context, brainID string) ([]sdk.BrainLink, error) {
+func (b *Store) GetFileLinks(ctx context.Context, brainID string) ([]sdk.BrainLink, error) {
 	rows, err := b.db.QueryContext(ctx,
 		`SELECT l.source_file_id, l.target_file_id FROM brain_links l
 		 JOIN brain_files f ON f.id = l.source_file_id
@@ -302,7 +303,7 @@ func (b *BrainDB) GetFileLinks(ctx context.Context, brainID string) ([]sdk.Brain
 	return links, rows.Err()
 }
 
-func (b *BrainDB) SaveGraph(ctx context.Context, graph *sdk.BrainGraph) error {
+func (b *Store) SaveGraph(ctx context.Context, graph *sdk.BrainGraph) error {
 	clusters, err := json.Marshal(graph.Clusters)
 	if err != nil {
 		return fmt.Errorf("marshal clusters: %w", err)
@@ -321,7 +322,7 @@ func (b *BrainDB) SaveGraph(ctx context.Context, graph *sdk.BrainGraph) error {
 	return err
 }
 
-func (b *BrainDB) GetGraph(ctx context.Context, brainID string) (*sdk.BrainGraph, error) {
+func (b *Store) GetGraph(ctx context.Context, brainID string) (*sdk.BrainGraph, error) {
 	var graph sdk.BrainGraph
 	var clustersJSON, nodesJSON string
 	err := b.db.QueryRowContext(ctx,
@@ -350,7 +351,7 @@ func (b *BrainDB) GetGraph(ctx context.Context, brainID string) (*sdk.BrainGraph
 	return &graph, nil
 }
 
-func (b *BrainDB) CreateDreamProposal(ctx context.Context, p *sdk.DreamProposal) error {
+func (b *Store) CreateDreamProposal(ctx context.Context, p *sdk.DreamProposal) error {
 	_, err := b.db.ExecContext(ctx,
 		`INSERT INTO dream_proposals (id, brain_id, snapshot, changes, summary, status, created_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
@@ -359,7 +360,7 @@ func (b *BrainDB) CreateDreamProposal(ctx context.Context, p *sdk.DreamProposal)
 	return err
 }
 
-func (b *BrainDB) GetDreamProposal(ctx context.Context, proposalID string) (*sdk.DreamProposal, error) {
+func (b *Store) GetDreamProposal(ctx context.Context, proposalID string) (*sdk.DreamProposal, error) {
 	var p sdk.DreamProposal
 	err := b.db.QueryRowContext(ctx,
 		`SELECT id, brain_id, snapshot, changes, summary, status, created_at, resolved_at, resolved_by
@@ -372,7 +373,7 @@ func (b *BrainDB) GetDreamProposal(ctx context.Context, proposalID string) (*sdk
 	return &p, nil
 }
 
-func (b *BrainDB) ListDreamProposals(ctx context.Context, brainID string) ([]*sdk.DreamProposal, error) {
+func (b *Store) ListDreamProposals(ctx context.Context, brainID string) ([]*sdk.DreamProposal, error) {
 	rows, err := b.db.QueryContext(ctx,
 		`SELECT id, brain_id, summary, status, created_at, resolved_at, resolved_by
 		 FROM dream_proposals WHERE brain_id = $1 ORDER BY created_at DESC`, brainID,
@@ -394,7 +395,7 @@ func (b *BrainDB) ListDreamProposals(ctx context.Context, brainID string) ([]*sd
 	return proposals, rows.Err()
 }
 
-func (b *BrainDB) UpdateDreamProposalStatus(ctx context.Context, proposalID string, status sdk.DreamProposalStatus, resolvedBy string) error {
+func (b *Store) UpdateDreamProposalStatus(ctx context.Context, proposalID string, status sdk.DreamProposalStatus, resolvedBy string) error {
 	now := time.Now()
 	_, err := b.db.ExecContext(ctx,
 		`UPDATE dream_proposals SET status=$1, resolved_at=$2, resolved_by=$3 WHERE id=$4`,
@@ -404,7 +405,7 @@ func (b *BrainDB) UpdateDreamProposalStatus(ctx context.Context, proposalID stri
 }
 
 // ResolveFileIDsByTitle converts [[link]] titles to file IDs within a brain.
-func (b *BrainDB) ResolveFileIDsByTitle(ctx context.Context, brainID string, titles []string) (map[string]string, error) {
+func (b *Store) ResolveFileIDsByTitle(ctx context.Context, brainID string, titles []string) (map[string]string, error) {
 	if len(titles) == 0 {
 		return nil, nil
 	}

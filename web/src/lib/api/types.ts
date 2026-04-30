@@ -64,6 +64,14 @@ export interface Provider {
 	version: string;
 	type: 'provider';
 	builtin: boolean;
+	id?: string;
+	provider_type?: string;
+}
+
+export interface CreateProviderRequest {
+	type: string;
+	name: string;
+	config: Record<string, unknown>;
 }
 
 export interface ToolSchema {

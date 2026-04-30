@@ -13,13 +13,13 @@ import (
 
 	"github.com/forgebox/forgebox/internal/brain"
 	"github.com/forgebox/forgebox/internal/config"
+	"github.com/forgebox/forgebox/internal/crypto"
 	"github.com/forgebox/forgebox/internal/engine"
 	"github.com/forgebox/forgebox/internal/gateway"
 	"github.com/forgebox/forgebox/internal/permissions"
 	"github.com/forgebox/forgebox/internal/plugins"
 	"github.com/forgebox/forgebox/internal/sessions"
 	"github.com/forgebox/forgebox/internal/storage/postgres"
-	"github.com/forgebox/forgebox/internal/storage/sqlite"
 	"github.com/forgebox/forgebox/internal/telemetry"
 	"github.com/forgebox/forgebox/internal/vm"
 	"github.com/forgebox/forgebox/pkg/sdk"
@@ -72,7 +72,11 @@ func cmdServe() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	store, err := sqlite.New(cfg.Storage.SQLite.Path)
+	if cfg.Storage.DSN == "" {
+		slog.Error("storage DSN missing — set FORGEBOX_DATABASE_URL or storage.dsn in config")
+		os.Exit(1)
+	}
+	store, err := postgres.New(cfg.Storage.DSN)
 	if err != nil {
 		slog.Error("failed to open storage", "error", err)
 		os.Exit(1)
@@ -97,48 +101,46 @@ func cmdServe() {
 		os.Exit(1)
 	}
 
-	// Initialize brain storage (PostgreSQL with pgvector).
-	var brainSvc *brain.Service
-	var brainStore sdk.BrainStore
-	if cfg.Brain.PostgresDSN != "" {
-		brainDB, err := postgres.New(cfg.Brain.PostgresDSN)
-		if err != nil {
-			slog.Warn("brain feature unavailable — postgres unreachable", "error", err)
-		} else {
-			defer brainDB.Close()
+	secretBox, err := crypto.NewFromEnv()
+	if err != nil {
+		slog.Error("encryption key required for DB-backed providers", "error", err, "env", crypto.EnvKey)
+		os.Exit(1)
+	}
+	if err := registry.LoadFromStore(ctx, store, secretBox); err != nil {
+		slog.Warn("failed to load DB-backed providers", "error", err)
+	}
 
-			embeddingProvider := cfg.Brain.EmbeddingProvider
-			embeddingModel := cfg.Brain.EmbeddingModel
-			if embeddingModel == "" {
-				embeddingModel = "text-embedding-3-small"
-			}
-			if embeddingProvider == "" {
-				embeddingProvider = "openai"
-			}
+	// Brain feature shares the same Postgres connection as the core store.
+	embeddingProvider := cfg.Brain.EmbeddingProvider
+	embeddingModel := cfg.Brain.EmbeddingModel
+	if embeddingModel == "" {
+		embeddingModel = "text-embedding-3-small"
+	}
+	if embeddingProvider == "" {
+		embeddingProvider = "openai"
+	}
 
-			var apiKey string
-			if provCfg, ok := cfg.Providers[embeddingProvider]; ok {
-				if key, ok := provCfg["api_key"].(string); ok {
-					apiKey = key
-				}
-			}
-
-			var embedder brain.Embedder
-			if apiKey != "" {
-				embedder = brain.NewOpenAIEmbedder(apiKey, embeddingModel)
-				slog.Info("brain embedder configured", "provider", embeddingProvider, "model", embeddingModel)
-			} else {
-				slog.Warn("brain: no embedding API key found, using mock embedder")
-				embedder = brain.NewMockEmbedder(1536)
-			}
-
-			brainStore = brainDB
-			brainSvc = brain.NewService(brainDB, embedder)
-			slog.Info("brain feature enabled")
-
-			go runArchiveCleanup(ctx, brainSvc)
+	var apiKey string
+	if provCfg, ok := cfg.Providers[embeddingProvider]; ok {
+		if key, ok := provCfg["api_key"].(string); ok {
+			apiKey = key
 		}
 	}
+
+	var embedder brain.Embedder
+	if apiKey != "" {
+		embedder = brain.NewOpenAIEmbedder(apiKey, embeddingModel)
+		slog.Info("brain embedder configured", "provider", embeddingProvider, "model", embeddingModel)
+	} else {
+		slog.Warn("brain: no embedding API key found, using mock embedder")
+		embedder = brain.NewMockEmbedder(1536)
+	}
+
+	var brainStore sdk.BrainStore = store
+	brainSvc := brain.NewService(store, embedder)
+	slog.Info("brain feature enabled")
+
+	go runArchiveCleanup(ctx, brainSvc)
 
 	orch, err := vm.NewOrchestrator(cfg.VM)
 	if err != nil {
@@ -166,6 +168,7 @@ func cmdServe() {
 		Store:          store,
 		BrainService:   brainSvc,
 		BrainStore:     brainStore,
+		SecretBox:      secretBox,
 	})
 
 	slog.Info("starting ForgeBox",
@@ -227,7 +230,11 @@ func cmdRun() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	store, err := sqlite.New(cfg.Storage.SQLite.Path)
+	if cfg.Storage.DSN == "" {
+		slog.Error("storage DSN missing — set FORGEBOX_DATABASE_URL or storage.dsn in config")
+		os.Exit(1)
+	}
+	store, err := postgres.New(cfg.Storage.DSN)
 	if err != nil {
 		slog.Error("failed to open storage", "error", err)
 		os.Exit(1)

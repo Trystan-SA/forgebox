@@ -53,7 +53,7 @@
 	const defaultNodes: Node[] = [];
 
 	onMount(async () => {
-		const id = page.params.id;
+		const id = page.params.id!;
 		try {
 			automation = await getAutomation(id);
 			try {

@@ -41,7 +41,9 @@
 			title="No agents yet"
 			description="Agents are autonomous AI assistants configured with custom instructions, tools, and permissions."
 		>
-			<a href="/agents/new" class="btn-primary">Create Agent</a>
+			{#snippet action()}
+				<a href="/agents/new" class="btn-primary">Create Agent</a>
+			{/snippet}
 		</EmptyState>
 	{:else}
 		<div class="grid">

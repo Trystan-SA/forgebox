@@ -54,7 +54,9 @@
 			title="No workflows yet"
 			description="Create your first workflow to chain AI tasks together visually."
 		>
-			<a href="/automations/new" class="btn-primary">Create Workflow</a>
+			{#snippet action()}
+				<a href="/automations/new" class="btn-primary">Create Workflow</a>
+			{/snippet}
 		</EmptyState>
 	{:else}
 		<div class="grid">

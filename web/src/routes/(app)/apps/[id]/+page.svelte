@@ -21,7 +21,7 @@
 	let messages = $state<ChatMessage[]>([]);
 	let messagesEl: HTMLDivElement;
 
-	const id = $derived(page.params.id);
+	const id = $derived(page.params.id!);
 
 	function parseTools(tools: string): string[] {
 		try { return JSON.parse(tools); }

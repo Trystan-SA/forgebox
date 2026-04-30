@@ -84,7 +84,9 @@
 			title="No apps yet"
 			description="Apps are internal tools built with AI. They run in isolated VMs with access to databases, APIs, and AI models."
 		>
-			<a href="/apps/new" class="btn-primary">Create App</a>
+			{#snippet action()}
+				<a href="/apps/new" class="btn-primary">Create App</a>
+			{/snippet}
 		</EmptyState>
 	{:else}
 		<div class="grid">

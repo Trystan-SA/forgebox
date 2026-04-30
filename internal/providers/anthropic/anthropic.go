@@ -21,15 +21,20 @@ type Provider struct {
 	httpClient *http.Client
 }
 
+// New creates a new Anthropic provider with default HTTP settings.
 func New() *Provider {
 	return &Provider{
 		httpClient: &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
-func (p *Provider) Name() string    { return "anthropic" }
+// Name returns the provider identifier.
+func (p *Provider) Name() string { return "anthropic" }
+
+// Version returns the provider version.
 func (p *Provider) Version() string { return "1.0.0" }
 
+// Init configures the provider with the given settings.
 func (p *Provider) Init(_ context.Context, config map[string]any) error {
 	key, ok := config["api_key"].(string)
 	if !ok || key == "" {
@@ -39,8 +44,10 @@ func (p *Provider) Init(_ context.Context, config map[string]any) error {
 	return nil
 }
 
+// Shutdown is a no-op for the HTTP-based Anthropic provider.
 func (p *Provider) Shutdown(_ context.Context) error { return nil }
 
+// Models returns the list of supported Anthropic models.
 func (p *Provider) Models() []sdk.Model {
 	return []sdk.Model{
 		{ID: "claude-sonnet-4-6", Name: "Claude Sonnet 4.6", MaxInputTokens: 200000, MaxOutputTokens: 16384, SupportsTools: true, SupportsVision: true},
@@ -49,6 +56,7 @@ func (p *Provider) Models() []sdk.Model {
 	}
 }
 
+// Complete sends a completion request to the Anthropic API.
 func (p *Provider) Complete(ctx context.Context, req *sdk.CompletionRequest) (*sdk.CompletionResponse, error) {
 	apiReq := p.buildRequest(req)
 
@@ -69,7 +77,7 @@ func (p *Provider) Complete(ctx context.Context, req *sdk.CompletionRequest) (*s
 	if err != nil {
 		return nil, fmt.Errorf("api call: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -88,6 +96,7 @@ func (p *Provider) Complete(ctx context.Context, req *sdk.CompletionRequest) (*s
 	return p.convertResponse(&apiResp), nil
 }
 
+// Stream sends a streaming completion request to the Anthropic API.
 func (p *Provider) Stream(ctx context.Context, req *sdk.CompletionRequest) (*sdk.StreamResponse, error) {
 	apiReq := p.buildRequest(req)
 	apiReq.Stream = true
@@ -105,14 +114,14 @@ func (p *Provider) Stream(ctx context.Context, req *sdk.CompletionRequest) (*sdk
 	httpReq.Header.Set("x-api-key", p.apiKey)
 	httpReq.Header.Set("anthropic-version", "2023-06-01")
 
-	resp, err := p.httpClient.Do(httpReq)
+	resp, err := p.httpClient.Do(httpReq) //nolint:bodyclose // closed inside the goroutine below
 	if err != nil {
 		return nil, fmt.Errorf("api call: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, fmt.Errorf("anthropic API error (HTTP %d): %s", resp.StatusCode, string(respBody))
 	}
 
@@ -120,7 +129,7 @@ func (p *Provider) Stream(ctx context.Context, req *sdk.CompletionRequest) (*sdk
 
 	go func() {
 		defer close(events)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		// TODO: Parse SSE stream from Anthropic API.
 		// For now, read full response and emit as single event.
 		respBody, err := io.ReadAll(resp.Body)
@@ -138,12 +147,12 @@ func (p *Provider) Stream(ctx context.Context, req *sdk.CompletionRequest) (*sdk
 // --- Anthropic API types ---
 
 type anthropicRequest struct {
-	Model     string            `json:"model"`
-	Messages  []anthropicMsg    `json:"messages"`
-	System    string            `json:"system,omitempty"`
-	MaxTokens int               `json:"max_tokens"`
-	Tools     []anthropicTool   `json:"tools,omitempty"`
-	Stream    bool              `json:"stream,omitempty"`
+	Model     string          `json:"model"`
+	Messages  []anthropicMsg  `json:"messages"`
+	System    string          `json:"system,omitempty"`
+	MaxTokens int             `json:"max_tokens"`
+	Tools     []anthropicTool `json:"tools,omitempty"`
+	Stream    bool            `json:"stream,omitempty"`
 }
 
 type anthropicMsg struct {
@@ -198,7 +207,7 @@ func (p *Provider) buildRequest(req *sdk.CompletionRequest) *anthropicRequest {
 		msgs = append(msgs, anthropicMsg{Role: m.Role, Content: content})
 	}
 
-	var tools []anthropicTool
+	tools := make([]anthropicTool, 0, len(req.Tools))
 	for _, t := range req.Tools {
 		tools = append(tools, anthropicTool{
 			Name:        t.Name,

@@ -104,12 +104,7 @@ func (e *Engine) Run(ctx context.Context, task *Task) (*Result, error) {
 	tools := e.registry.ListTools()
 	toolDefs := make([]sdk.ToolDef, len(tools))
 	for i, t := range tools {
-		schema := t.Schema()
-		toolDefs[i] = sdk.ToolDef{
-			Name:        schema.Name,
-			Description: schema.Description,
-			InputSchema: schema.InputSchema,
-		}
+		toolDefs[i] = sdk.ToolDef(t.Schema())
 	}
 
 	// Boot a VM for this task.
@@ -135,10 +130,10 @@ func (e *Engine) Run(ctx context.Context, task *Task) (*Result, error) {
 
 	for i := 0; i < maxIterations; i++ {
 		req := &sdk.CompletionRequest{
-			Model:       task.Model,
-			Messages:    messages,
-			Tools:       toolDefs,
-			MaxTokens:   4096,
+			Model:        task.Model,
+			Messages:     messages,
+			Tools:        toolDefs,
+			MaxTokens:    4096,
 			SystemPrompt: buildSystemPrompt(),
 		}
 

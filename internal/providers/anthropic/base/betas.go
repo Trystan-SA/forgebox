@@ -58,8 +58,9 @@ func RemoveBetas(existing string, drop ...string) string {
 	for _, d := range drop {
 		dropSet[d] = struct{}{}
 	}
-	var out []string
-	for _, v := range strings.Split(existing, ",") {
+	parts := strings.Split(existing, ",")
+	out := make([]string, 0, len(parts))
+	for _, v := range parts {
 		v = strings.TrimSpace(v)
 		if v == "" {
 			continue

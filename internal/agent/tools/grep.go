@@ -18,8 +18,10 @@ type grepInput struct {
 	Type    string `json:"type,omitempty"` // file type filter (e.g., "go", "py")
 }
 
+// Name returns the tool identifier.
 func (t *GrepTool) Name() string { return "grep" }
 
+// Execute searches file contents using ripgrep.
 func (t *GrepTool) Execute(ctx context.Context, input json.RawMessage) (*Result, error) {
 	var in grepInput
 	if err := json.Unmarshal(input, &in); err != nil {

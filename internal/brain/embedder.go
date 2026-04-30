@@ -38,8 +38,10 @@ func NewOpenAIEmbedder(apiKey, model string) *OpenAIEmbedder {
 	}
 }
 
+// Dimension returns the vector length produced by this embedder.
 func (e *OpenAIEmbedder) Dimension() int { return e.dimension }
 
+// Embed calls the OpenAI embeddings API and returns a float32 vector.
 func (e *OpenAIEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
 	reqBody, err := json.Marshal(map[string]any{
 		"model": e.model,
@@ -60,7 +62,7 @@ func (e *OpenAIEmbedder) Embed(ctx context.Context, text string) ([]float32, err
 	if err != nil {
 		return nil, fmt.Errorf("embedding API call: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -97,8 +99,10 @@ func NewMockEmbedder(dim int) *MockEmbedder {
 	return &MockEmbedder{dim: dim}
 }
 
+// Dimension returns the configured vector length.
 func (m *MockEmbedder) Dimension() int { return m.dim }
 
+// Embed returns a deterministic vector derived from the text length.
 func (m *MockEmbedder) Embed(_ context.Context, text string) ([]float32, error) {
 	m.called++
 	vec := make([]float32, m.dim)

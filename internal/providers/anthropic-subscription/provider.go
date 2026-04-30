@@ -12,15 +12,21 @@ import (
 	"github.com/forgebox/forgebox/pkg/sdk/llmbase/auth"
 )
 
+// Provider implements sdk.ProviderPlugin for Claude Max subscription accounts.
 type Provider struct {
 	*base.Provider
 }
 
+// New returns an unconfigured anthropic-subscription provider; call Init before use.
 func New() *Provider { return &Provider{} }
 
-func (p *Provider) Name() string    { return "anthropic-subscription" }
+// Name returns the provider identifier.
+func (p *Provider) Name() string { return "anthropic-subscription" }
+
+// Version returns the provider plugin version.
 func (p *Provider) Version() string { return "1.0.0" }
 
+// Init configures the provider from the supplied config map.
 func (p *Provider) Init(ctx context.Context, raw map[string]any) error {
 	cfg, err := fromMap(ctx, raw)
 	if err != nil {
@@ -41,6 +47,8 @@ func (p *Provider) Init(ctx context.Context, raw map[string]any) error {
 	return nil
 }
 
+// Shutdown is a no-op for the anthropic-subscription provider.
 func (p *Provider) Shutdown(_ context.Context) error { return nil }
 
+// Models returns the list of supported Anthropic models.
 func (p *Provider) Models() []sdk.Model { return anthropic.Models() }

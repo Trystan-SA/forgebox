@@ -16,8 +16,10 @@ type globInput struct {
 	Path    string `json:"path,omitempty"`
 }
 
+// Name returns the tool identifier.
 func (t *GlobTool) Name() string { return "glob" }
 
+// Execute finds files matching a glob pattern.
 func (t *GlobTool) Execute(ctx context.Context, input json.RawMessage) (*Result, error) {
 	var in globInput
 	if err := json.Unmarshal(input, &in); err != nil {

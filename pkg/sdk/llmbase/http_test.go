@@ -29,7 +29,7 @@ func TestHTTPRunner_Success(t *testing.T) {
 	r := NewHTTPRunner(HTTPOptions{Timeout: 2 * time.Second, MaxRetries: 0})
 	resp, err := r.Do(context.Background(), srv.URL, http.Header{}, strings.NewReader(`{"hello":"world"}`))
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
@@ -47,7 +47,7 @@ func TestHTTPRunner_RetryOn5xx(t *testing.T) {
 	r := NewHTTPRunner(HTTPOptions{Timeout: 2 * time.Second, MaxRetries: 3, RetryDelay: 1 * time.Millisecond})
 	resp, err := r.Do(context.Background(), srv.URL, http.Header{}, strings.NewReader("{}"))
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.EqualValues(t, 3, calls.Load())
 }

@@ -118,7 +118,7 @@ func (p *Provider) Complete(ctx context.Context, req *sdk.CompletionRequest) (*s
 	if err != nil {
 		return nil, fmt.Errorf("anthropic complete: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

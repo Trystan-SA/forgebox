@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-
 	"time"
 
 	"github.com/forgebox/forgebox/internal/brain"
@@ -39,9 +38,13 @@ func main() {
 
 	switch os.Args[1] {
 	case "serve":
-		cmdServe()
+		if err := cmdServe(); err != nil {
+			os.Exit(1) // cmdServe already logged the error
+		}
 	case "run":
-		cmdRun()
+		if err := cmdRun(); err != nil {
+			os.Exit(1) // cmdRun already logged the error
+		}
 	case "init":
 		cmdInit()
 	case "status":
@@ -51,37 +54,59 @@ func main() {
 	case "help", "-h", "--help":
 		printUsage()
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
+		_, _ = fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
 		printUsage()
 		os.Exit(1)
 	}
 }
 
-func cmdServe() {
+func cmdServe() error {
 	cfg, err := config.Load(configPath())
 	if err != nil {
 		slog.Error("failed to load config", "error", err)
 		os.Exit(1)
 	}
 
-	if err := telemetry.Init(cfg.Telemetry); err != nil {
-		slog.Warn("telemetry init failed, continuing without", "error", err)
-	}
-	defer telemetry.Shutdown()
-
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
-
 	if cfg.Storage.DSN == "" {
 		slog.Error("storage DSN missing — set FORGEBOX_DATABASE_URL or storage.dsn in config")
 		os.Exit(1)
 	}
+
+	// All os.Exit-on-fail initializations must complete before any defer so that
+	// deferred cleanups are not skipped by os.Exit.
 	store, err := postgres.New(cfg.Storage.DSN)
 	if err != nil {
 		slog.Error("failed to open storage", "error", err)
 		os.Exit(1)
 	}
-	defer store.Close()
+
+	registry := plugins.NewRegistry()
+	if err = registry.LoadBuiltins(cfg); err != nil {
+		slog.Error("failed to load plugins", "error", err)
+		os.Exit(1)
+	}
+
+	secretBox, err := crypto.NewFromEnv()
+	if err != nil {
+		slog.Error("encryption key required for DB-backed providers", "error", err, "env", crypto.EnvKey)
+		os.Exit(1)
+	}
+
+	orch, err := vm.NewOrchestrator(cfg.VM)
+	if err != nil {
+		slog.Error("failed to init VM orchestrator", "error", err)
+		os.Exit(1)
+	}
+
+	if err = telemetry.Init(cfg.Telemetry); err != nil {
+		slog.Warn("telemetry init failed, continuing without", "error", err)
+	}
+	defer telemetry.Shutdown()
+	defer func() { _ = store.Close() }()
+
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+	defer orch.Shutdown(ctx)
 
 	// Check if this is a fresh install with no users.
 	userCount, err := store.CountUsers(ctx)
@@ -95,18 +120,7 @@ func cmdServe() {
 		}
 	}
 
-	registry := plugins.NewRegistry()
-	if err := registry.LoadBuiltins(cfg); err != nil {
-		slog.Error("failed to load plugins", "error", err)
-		os.Exit(1)
-	}
-
-	secretBox, err := crypto.NewFromEnv()
-	if err != nil {
-		slog.Error("encryption key required for DB-backed providers", "error", err, "env", crypto.EnvKey)
-		os.Exit(1)
-	}
-	if err := registry.LoadFromStore(ctx, store, secretBox); err != nil {
+	if err = registry.LoadFromStore(ctx, store, secretBox); err != nil {
 		slog.Warn("failed to load DB-backed providers", "error", err)
 	}
 
@@ -142,21 +156,14 @@ func cmdServe() {
 
 	go runArchiveCleanup(ctx, brainSvc)
 
-	orch, err := vm.NewOrchestrator(cfg.VM)
-	if err != nil {
-		slog.Error("failed to init VM orchestrator", "error", err)
-		os.Exit(1)
-	}
-	defer orch.Shutdown(ctx)
-
 	sessionMgr := sessions.NewManager(store)
 	permChecker := permissions.NewChecker(cfg.Auth, store)
 
 	eng := engine.New(engine.Config{
-		Registry:    registry,
+		Registry:     registry,
 		Orchestrator: orch,
-		Permissions: permChecker,
-		Sessions:    sessionMgr,
+		Permissions:  permChecker,
+		Sessions:     sessionMgr,
 	})
 
 	srv := gateway.New(gateway.Config{
@@ -179,8 +186,9 @@ func cmdServe() {
 
 	if err := srv.Run(ctx); err != nil {
 		slog.Error("server error", "error", err)
-		os.Exit(1)
+		return err
 	}
+	return nil
 }
 
 // runArchiveCleanup runs hourly and purges brain files whose deleted_at is
@@ -214,7 +222,7 @@ func runArchiveCleanup(ctx context.Context, svc *brain.Service) {
 	}
 }
 
-func cmdRun() {
+func cmdRun() error {
 	if len(os.Args) < 3 {
 		fmt.Fprintln(os.Stderr, "usage: forgebox run <prompt> [--provider NAME] [--model NAME]")
 		os.Exit(1)
@@ -227,22 +235,19 @@ func cmdRun() {
 		os.Exit(1)
 	}
 
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
-
 	if cfg.Storage.DSN == "" {
 		slog.Error("storage DSN missing — set FORGEBOX_DATABASE_URL or storage.dsn in config")
 		os.Exit(1)
 	}
+
 	store, err := postgres.New(cfg.Storage.DSN)
 	if err != nil {
 		slog.Error("failed to open storage", "error", err)
 		os.Exit(1)
 	}
-	defer store.Close()
 
 	registry := plugins.NewRegistry()
-	if err := registry.LoadBuiltins(cfg); err != nil {
+	if err = registry.LoadBuiltins(cfg); err != nil {
 		slog.Error("failed to load plugins", "error", err)
 		os.Exit(1)
 	}
@@ -252,6 +257,10 @@ func cmdRun() {
 		slog.Error("failed to init VM orchestrator", "error", err)
 		os.Exit(1)
 	}
+
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+	defer func() { _ = store.Close() }()
 	defer orch.Shutdown(ctx)
 
 	eng := engine.New(engine.Config{
@@ -267,10 +276,11 @@ func cmdRun() {
 	})
 	if err != nil {
 		slog.Error("task failed", "error", err)
-		os.Exit(1)
+		return err
 	}
 
 	fmt.Println(result.Output)
+	return nil
 }
 
 func cmdInit() {

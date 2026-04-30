@@ -73,12 +73,13 @@ type TaskRecord struct {
 // TaskStatus is the lifecycle state of a task.
 type TaskStatus string
 
+// Task status values.
 const (
 	TaskPending   TaskStatus = "pending"
 	TaskRunning   TaskStatus = "running"
 	TaskCompleted TaskStatus = "completed"
 	TaskFailed    TaskStatus = "failed"
-	TaskCancelled TaskStatus = "cancelled"
+	TaskCancelled TaskStatus = "canceled"
 )
 
 // TaskFilter specifies criteria for listing tasks.
@@ -131,7 +132,7 @@ type UserRecord struct {
 	ID           string   `json:"id"`
 	Name         string   `json:"name"`
 	Email        string   `json:"email"`
-	PasswordHash string   `json:"-"` // never exposed in JSON
+	PasswordHash string   `json:"-"`    // never exposed in JSON
 	Role         string   `json:"role"` // "admin", "developer", "operator", "viewer"
 	TeamIDs      []string `json:"team_ids,omitempty"`
 	Disabled     bool     `json:"disabled"`
@@ -163,9 +164,9 @@ type AutomationRecord struct {
 	CreatedBy   string    `json:"created_by"`
 	Sharing     string    `json:"sharing"` // "personal", "team", "org"
 	TeamID      string    `json:"team_id,omitempty"`
-	Trigger     string    `json:"trigger"`   // JSON blob
-	Nodes       string    `json:"nodes"`     // JSON blob (Svelte Flow nodes)
-	Edges       string    `json:"edges"`     // JSON blob (Svelte Flow edges)
+	Trigger     string    `json:"trigger"` // JSON blob
+	Nodes       string    `json:"nodes"`   // JSON blob (Svelte Flow nodes)
+	Edges       string    `json:"edges"`   // JSON blob (Svelte Flow edges)
 	Enabled     bool      `json:"enabled"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
@@ -182,6 +183,7 @@ type AutomationFilter struct {
 // AppStatus is the lifecycle state of an app.
 type AppStatus string
 
+// App status values.
 const (
 	AppDraft     AppStatus = "draft"
 	AppDeploying AppStatus = "deploying"
@@ -232,9 +234,9 @@ type ProviderStore interface {
 // ProviderRecord is one configured provider instance.
 type ProviderRecord struct {
 	ID              string    `json:"id"`
-	Type            string    `json:"type"`             // e.g. "anthropic", "anthropic-subscription"
-	Name            string    `json:"name"`             // user-supplied display name; unique; used as registry key
-	ConfigEncrypted string    `json:"-"`                // AEAD-sealed JSON of the provider config map
+	Type            string    `json:"type"` // e.g. "anthropic", "anthropic-subscription"
+	Name            string    `json:"name"` // user-supplied display name; unique; used as registry key
+	ConfigEncrypted string    `json:"-"`    // AEAD-sealed JSON of the provider config map
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 }

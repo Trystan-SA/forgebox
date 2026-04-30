@@ -13,9 +13,12 @@ import (
 )
 
 // Verify Store implements BrainStore (and StoragePlugin via storage.go).
-var _ sdk.BrainStore = (*Store)(nil)
-var _ sdk.StoragePlugin = (*Store)(nil)
+var (
+	_ sdk.BrainStore    = (*Store)(nil)
+	_ sdk.StoragePlugin = (*Store)(nil)
+)
 
+// CreateBrain persists a new brain record.
 func (b *Store) CreateBrain(ctx context.Context, brain *sdk.BrainRecord) error {
 	_, err := b.db.ExecContext(ctx,
 		`INSERT INTO brains (id, automation_id, embedding_provider, embedding_model, embedding_dimension, created_at, updated_at)
@@ -26,6 +29,7 @@ func (b *Store) CreateBrain(ctx context.Context, brain *sdk.BrainRecord) error {
 	return err
 }
 
+// GetBrain retrieves a brain by ID.
 func (b *Store) GetBrain(ctx context.Context, id string) (*sdk.BrainRecord, error) {
 	var rec sdk.BrainRecord
 	err := b.db.QueryRowContext(ctx,
@@ -39,6 +43,7 @@ func (b *Store) GetBrain(ctx context.Context, id string) (*sdk.BrainRecord, erro
 	return &rec, nil
 }
 
+// GetBrainByAutomation retrieves the brain associated with an automation.
 func (b *Store) GetBrainByAutomation(ctx context.Context, automationID string) (*sdk.BrainRecord, error) {
 	var rec sdk.BrainRecord
 	err := b.db.QueryRowContext(ctx,
@@ -52,6 +57,7 @@ func (b *Store) GetBrainByAutomation(ctx context.Context, automationID string) (
 	return &rec, nil
 }
 
+// UpdateBrain updates embedding configuration for a brain.
 func (b *Store) UpdateBrain(ctx context.Context, brain *sdk.BrainRecord) error {
 	brain.UpdatedAt = time.Now()
 	_, err := b.db.ExecContext(ctx,
@@ -61,11 +67,13 @@ func (b *Store) UpdateBrain(ctx context.Context, brain *sdk.BrainRecord) error {
 	return err
 }
 
+// DeleteBrain removes a brain and all its files.
 func (b *Store) DeleteBrain(ctx context.Context, id string) error {
 	_, err := b.db.ExecContext(ctx, `DELETE FROM brains WHERE id = $1`, id)
 	return err
 }
 
+// CreateFile inserts a new brain file with optional embedding.
 func (b *Store) CreateFile(ctx context.Context, file *sdk.BrainFile) error {
 	var embeddingStr *string
 	if file.Embedding != nil {
@@ -82,6 +90,7 @@ func (b *Store) CreateFile(ctx context.Context, file *sdk.BrainFile) error {
 	return err
 }
 
+// UpdateFile updates the content and embedding of a brain file.
 func (b *Store) UpdateFile(ctx context.Context, file *sdk.BrainFile) error {
 	file.UpdatedAt = time.Now()
 	var embeddingStr *string
@@ -97,6 +106,7 @@ func (b *Store) UpdateFile(ctx context.Context, file *sdk.BrainFile) error {
 	return err
 }
 
+// DeleteFile soft-deletes a brain file by setting deleted_at.
 func (b *Store) DeleteFile(ctx context.Context, fileID string) error {
 	_, err := b.db.ExecContext(ctx,
 		`UPDATE brain_files SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL`,
@@ -105,11 +115,13 @@ func (b *Store) DeleteFile(ctx context.Context, fileID string) error {
 	return err
 }
 
+// HardDeleteFile permanently removes a brain file row.
 func (b *Store) HardDeleteFile(ctx context.Context, fileID string) error {
 	_, err := b.db.ExecContext(ctx, `DELETE FROM brain_files WHERE id = $1`, fileID)
 	return err
 }
 
+// ListExpiredArchivedFiles returns soft-deleted files whose deleted_at is before the given time.
 func (b *Store) ListExpiredArchivedFiles(ctx context.Context, before time.Time) ([]*sdk.BrainFile, error) {
 	rows, err := b.db.QueryContext(ctx,
 		`SELECT id, brain_id, title, content, cluster_id, created_at, updated_at, created_by
@@ -120,7 +132,7 @@ func (b *Store) ListExpiredArchivedFiles(ctx context.Context, before time.Time) 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var files []*sdk.BrainFile
 	for rows.Next() {
@@ -134,6 +146,7 @@ func (b *Store) ListExpiredArchivedFiles(ctx context.Context, before time.Time) 
 	return files, rows.Err()
 }
 
+// GetFile retrieves a single brain file by ID.
 func (b *Store) GetFile(ctx context.Context, fileID string) (*sdk.BrainFile, error) {
 	var rec sdk.BrainFile
 	err := b.db.QueryRowContext(ctx,
@@ -147,6 +160,7 @@ func (b *Store) GetFile(ctx context.Context, fileID string) (*sdk.BrainFile, err
 	return &rec, nil
 }
 
+// ListFiles returns all active (non-deleted) files for a brain.
 func (b *Store) ListFiles(ctx context.Context, brainID string) ([]*sdk.BrainFile, error) {
 	rows, err := b.db.QueryContext(ctx,
 		`SELECT id, brain_id, title, content, cluster_id, created_at, updated_at, created_by
@@ -155,7 +169,7 @@ func (b *Store) ListFiles(ctx context.Context, brainID string) ([]*sdk.BrainFile
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var files []*sdk.BrainFile
 	for rows.Next() {
@@ -169,6 +183,7 @@ func (b *Store) ListFiles(ctx context.Context, brainID string) ([]*sdk.BrainFile
 	return files, rows.Err()
 }
 
+// SearchByEmbedding returns the nearest brain files to the given embedding vector.
 func (b *Store) SearchByEmbedding(ctx context.Context, brainID string, vec []float32, limit int) ([]*sdk.BrainFileWithMeta, error) {
 	v := pgvector.NewVector(vec)
 	rows, err := b.db.QueryContext(ctx,
@@ -183,7 +198,7 @@ func (b *Store) SearchByEmbedding(ctx context.Context, brainID string, vec []flo
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var files []*sdk.BrainFileWithMeta
 	for rows.Next() {
@@ -197,12 +212,13 @@ func (b *Store) SearchByEmbedding(ctx context.Context, brainID string, vec []flo
 	return files, rows.Err()
 }
 
+// SetFileHashtags replaces all hashtags for a brain file atomically.
 func (b *Store) SetFileHashtags(ctx context.Context, fileID string, tags []string) error {
 	tx, err := b.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM brain_hashtags WHERE file_id = $1`, fileID); err != nil {
 		return err
@@ -218,12 +234,13 @@ func (b *Store) SetFileHashtags(ctx context.Context, fileID string, tags []strin
 	return tx.Commit()
 }
 
+// GetFileHashtags returns all hashtags for a brain file.
 func (b *Store) GetFileHashtags(ctx context.Context, fileID string) ([]string, error) {
 	rows, err := b.db.QueryContext(ctx, `SELECT tag FROM brain_hashtags WHERE file_id = $1 ORDER BY tag`, fileID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var tags []string
 	for rows.Next() {
@@ -236,6 +253,7 @@ func (b *Store) GetFileHashtags(ctx context.Context, fileID string) ([]string, e
 	return tags, rows.Err()
 }
 
+// ListHashtags returns all distinct hashtags used across a brain's files.
 func (b *Store) ListHashtags(ctx context.Context, brainID string) ([]string, error) {
 	rows, err := b.db.QueryContext(ctx,
 		`SELECT DISTINCT h.tag FROM brain_hashtags h
@@ -246,7 +264,7 @@ func (b *Store) ListHashtags(ctx context.Context, brainID string) ([]string, err
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var tags []string
 	for rows.Next() {
@@ -259,12 +277,13 @@ func (b *Store) ListHashtags(ctx context.Context, brainID string) ([]string, err
 	return tags, rows.Err()
 }
 
+// SetFileLinks replaces all outbound links for a source file atomically.
 func (b *Store) SetFileLinks(ctx context.Context, sourceFileID string, targetFileIDs []string) error {
 	tx, err := b.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM brain_links WHERE source_file_id = $1`, sourceFileID); err != nil {
 		return err
@@ -280,6 +299,7 @@ func (b *Store) SetFileLinks(ctx context.Context, sourceFileID string, targetFil
 	return tx.Commit()
 }
 
+// GetFileLinks returns all active file links within a brain.
 func (b *Store) GetFileLinks(ctx context.Context, brainID string) ([]sdk.BrainLink, error) {
 	rows, err := b.db.QueryContext(ctx,
 		`SELECT l.source_file_id, l.target_file_id FROM brain_links l
@@ -290,7 +310,7 @@ func (b *Store) GetFileLinks(ctx context.Context, brainID string) ([]sdk.BrainLi
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var links []sdk.BrainLink
 	for rows.Next() {
@@ -303,6 +323,7 @@ func (b *Store) GetFileLinks(ctx context.Context, brainID string) ([]sdk.BrainLi
 	return links, rows.Err()
 }
 
+// SaveGraph upserts the precomputed graph for a brain.
 func (b *Store) SaveGraph(ctx context.Context, graph *sdk.BrainGraph) error {
 	clusters, err := json.Marshal(graph.Clusters)
 	if err != nil {
@@ -322,6 +343,7 @@ func (b *Store) SaveGraph(ctx context.Context, graph *sdk.BrainGraph) error {
 	return err
 }
 
+// GetGraph retrieves the precomputed graph for a brain.
 func (b *Store) GetGraph(ctx context.Context, brainID string) (*sdk.BrainGraph, error) {
 	var graph sdk.BrainGraph
 	var clustersJSON, nodesJSON string
@@ -332,10 +354,10 @@ func (b *Store) GetGraph(ctx context.Context, brainID string) (*sdk.BrainGraph, 
 		return nil, err
 	}
 
-	if err := json.Unmarshal([]byte(clustersJSON), &graph.Clusters); err != nil {
+	if err = json.Unmarshal([]byte(clustersJSON), &graph.Clusters); err != nil {
 		return nil, fmt.Errorf("unmarshal clusters: %w", err)
 	}
-	if err := json.Unmarshal([]byte(nodesJSON), &graph.Nodes); err != nil {
+	if err = json.Unmarshal([]byte(nodesJSON), &graph.Nodes); err != nil {
 		return nil, fmt.Errorf("unmarshal nodes: %w", err)
 	}
 
@@ -351,6 +373,7 @@ func (b *Store) GetGraph(ctx context.Context, brainID string) (*sdk.BrainGraph, 
 	return &graph, nil
 }
 
+// CreateDreamProposal persists a new dream proposal.
 func (b *Store) CreateDreamProposal(ctx context.Context, p *sdk.DreamProposal) error {
 	_, err := b.db.ExecContext(ctx,
 		`INSERT INTO dream_proposals (id, brain_id, snapshot, changes, summary, status, created_at)
@@ -360,6 +383,7 @@ func (b *Store) CreateDreamProposal(ctx context.Context, p *sdk.DreamProposal) e
 	return err
 }
 
+// GetDreamProposal retrieves a dream proposal by ID.
 func (b *Store) GetDreamProposal(ctx context.Context, proposalID string) (*sdk.DreamProposal, error) {
 	var p sdk.DreamProposal
 	err := b.db.QueryRowContext(ctx,
@@ -373,6 +397,7 @@ func (b *Store) GetDreamProposal(ctx context.Context, proposalID string) (*sdk.D
 	return &p, nil
 }
 
+// ListDreamProposals returns all proposals for a brain, newest first.
 func (b *Store) ListDreamProposals(ctx context.Context, brainID string) ([]*sdk.DreamProposal, error) {
 	rows, err := b.db.QueryContext(ctx,
 		`SELECT id, brain_id, summary, status, created_at, resolved_at, resolved_by
@@ -381,7 +406,7 @@ func (b *Store) ListDreamProposals(ctx context.Context, brainID string) ([]*sdk.
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var proposals []*sdk.DreamProposal
 	for rows.Next() {
@@ -395,6 +420,7 @@ func (b *Store) ListDreamProposals(ctx context.Context, brainID string) ([]*sdk.
 	return proposals, rows.Err()
 }
 
+// UpdateDreamProposalStatus sets the status and resolution metadata of a proposal.
 func (b *Store) UpdateDreamProposalStatus(ctx context.Context, proposalID string, status sdk.DreamProposalStatus, resolvedBy string) error {
 	now := time.Now()
 	_, err := b.db.ExecContext(ctx,
@@ -415,6 +441,7 @@ func (b *Store) ResolveFileIDsByTitle(ctx context.Context, brainID string, title
 		placeholders[i] = fmt.Sprintf("$%d", i+2)
 		args = append(args, title)
 	}
+	//nolint:gosec // placeholders contains only "$N" parameter markers, not user data
 	query := fmt.Sprintf(
 		`SELECT id, title FROM brain_files WHERE brain_id = $1 AND deleted_at IS NULL AND title IN (%s)`,
 		strings.Join(placeholders, ","),
@@ -423,7 +450,7 @@ func (b *Store) ResolveFileIDsByTitle(ctx context.Context, brainID string, title
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	result := make(map[string]string)
 	for rows.Next() {

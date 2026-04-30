@@ -66,6 +66,7 @@ type StreamEvent struct {
 // StreamEventType identifies the kind of streaming event.
 type StreamEventType string
 
+// Stream event type values.
 const (
 	EventTextDelta StreamEventType = "text_delta"
 	EventToolCall  StreamEventType = "tool_call"

@@ -5,7 +5,7 @@
 	import type { AgentRole, Agent } from '$lib/api/types';
 	import { listBrainFiles } from '$lib/api/brain';
 
-	let agentId = $derived(page.params.id);
+	let agentId = $derived(page.params.id!);
 	let notFound = $state(false);
 	let name = $state('');
 	let description = $state('');

@@ -21,15 +21,20 @@ type Provider struct {
 	httpClient *http.Client
 }
 
+// New returns an unconfigured OpenAI provider; call Init before use.
 func New() *Provider {
 	return &Provider{
 		httpClient: &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
-func (p *Provider) Name() string    { return "openai" }
+// Name returns the provider identifier.
+func (p *Provider) Name() string { return "openai" }
+
+// Version returns the provider plugin version.
 func (p *Provider) Version() string { return "1.0.0" }
 
+// Init configures the provider from the supplied config map.
 func (p *Provider) Init(_ context.Context, config map[string]any) error {
 	key, ok := config["api_key"].(string)
 	if !ok || key == "" {
@@ -39,8 +44,10 @@ func (p *Provider) Init(_ context.Context, config map[string]any) error {
 	return nil
 }
 
+// Shutdown is a no-op for the OpenAI provider.
 func (p *Provider) Shutdown(_ context.Context) error { return nil }
 
+// Models returns the list of supported OpenAI models.
 func (p *Provider) Models() []sdk.Model {
 	return []sdk.Model{
 		{ID: "gpt-4.1", Name: "GPT-4.1", MaxInputTokens: 1047576, MaxOutputTokens: 32768, SupportsTools: true, SupportsVision: true},
@@ -50,6 +57,7 @@ func (p *Provider) Models() []sdk.Model {
 	}
 }
 
+// Complete sends a completion request and returns the full response.
 func (p *Provider) Complete(ctx context.Context, req *sdk.CompletionRequest) (*sdk.CompletionResponse, error) {
 	apiReq := p.buildRequest(req)
 
@@ -69,7 +77,7 @@ func (p *Provider) Complete(ctx context.Context, req *sdk.CompletionRequest) (*s
 	if err != nil {
 		return nil, fmt.Errorf("api call: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -88,6 +96,7 @@ func (p *Provider) Complete(ctx context.Context, req *sdk.CompletionRequest) (*s
 	return p.convertResponse(&apiResp), nil
 }
 
+// Stream returns a streaming response channel backed by a Complete call.
 func (p *Provider) Stream(ctx context.Context, req *sdk.CompletionRequest) (*sdk.StreamResponse, error) {
 	// For now, use Complete and wrap as a single-event stream.
 	resp, err := p.Complete(ctx, req)
@@ -116,10 +125,10 @@ func (p *Provider) Stream(ctx context.Context, req *sdk.CompletionRequest) (*sdk
 // --- OpenAI API types ---
 
 type openaiRequest struct {
-	Model    string         `json:"model"`
-	Messages []openaiMsg    `json:"messages"`
-	Tools    []openaiTool   `json:"tools,omitempty"`
-	MaxTokens int           `json:"max_completion_tokens,omitempty"`
+	Model     string       `json:"model"`
+	Messages  []openaiMsg  `json:"messages"`
+	Tools     []openaiTool `json:"tools,omitempty"`
+	MaxTokens int          `json:"max_completion_tokens,omitempty"`
 }
 
 type openaiMsg struct {
@@ -179,7 +188,7 @@ func (p *Provider) buildRequest(req *sdk.CompletionRequest) *openaiRequest {
 		msgs = append(msgs, openaiMsg{Role: m.Role, Content: content})
 	}
 
-	var tools []openaiTool
+	tools := make([]openaiTool, 0, len(req.Tools))
 	for _, t := range req.Tools {
 		tools = append(tools, openaiTool{
 			Type: "function",
@@ -205,7 +214,7 @@ func (p *Provider) convertResponse(resp *openaiResponse) *sdk.CompletionResponse
 	}
 
 	choice := resp.Choices[0]
-	var toolCalls []sdk.ToolCall
+	toolCalls := make([]sdk.ToolCall, 0, len(choice.Message.ToolCalls))
 	for _, tc := range choice.Message.ToolCalls {
 		toolCalls = append(toolCalls, sdk.ToolCall{
 			ID:    tc.ID,

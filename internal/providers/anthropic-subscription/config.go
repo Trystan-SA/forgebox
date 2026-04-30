@@ -8,6 +8,7 @@ import (
 	"github.com/forgebox/forgebox/pkg/sdk/llmbase/auth"
 )
 
+// Config holds the configuration for the anthropic-subscription provider.
 type Config struct {
 	Token     string `yaml:"token"`
 	TimeoutMS int    `yaml:"timeout_ms"`

@@ -13,14 +13,13 @@ linters:
     - staticcheck
     - gosec
     - revive
-    - gofumpt
     - ineffassign
     - unconvert
     - gocritic
     - misspell
     - nolintlint
     - bodyclose
-    - exportloopref
+    - copyloopvar
     - whitespace
     - prealloc
 
@@ -85,3 +84,4 @@ issues:
     - path: \.pb\.go$
       linters:
         - all
+# end

@@ -153,7 +153,7 @@ func WriteDefault(path string) error {
 	}
 
 	header := []byte("# ForgeBox configuration\n# See https://docs.forgebox.dev/configuration for all options\n\n")
-	return os.WriteFile(path, append(header, data...), 0o644)
+	return os.WriteFile(path, append(header, data...), 0o600)
 }
 
 func (c *Config) applyEnvOverrides() {

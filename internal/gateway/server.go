@@ -7,6 +7,8 @@ package gateway
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,9 +19,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"crypto/rand"
-	"encoding/hex"
 
 	"github.com/forgebox/forgebox/internal/auth"
 	"github.com/forgebox/forgebox/internal/brain"
@@ -46,35 +45,35 @@ type Config struct {
 
 // Server is the main ForgeBox API server.
 type Server struct {
-	cfg           Config
-	mux           *http.ServeMux
-	engine        *engine.Engine
-	sessions      *sessions.Manager
-	registry      *plugins.Registry
-	store         sdk.StoragePlugin
-	brainService  *brain.Service
-	brainStore    sdk.BrainStore
-	secretBox     *fbcrypto.SecretBox
+	cfg          Config
+	mux          *http.ServeMux
+	engine       *engine.Engine
+	sessions     *sessions.Manager
+	registry     *plugins.Registry
+	store        sdk.StoragePlugin
+	brainService *brain.Service
+	brainStore   sdk.BrainStore
+	secretBox    *fbcrypto.SecretBox
 }
 
 // New creates a new gateway server.
 func New(cfg Config) *Server {
 	s := &Server{
-		cfg:           cfg,
-		mux:           http.NewServeMux(),
-		engine:        cfg.Engine,
-		sessions:      cfg.Sessions,
-		registry:      cfg.Registry,
-		store:         cfg.Store,
-		brainService:  cfg.BrainService,
-		brainStore:    cfg.BrainStore,
-		secretBox:     cfg.SecretBox,
+		cfg:          cfg,
+		mux:          http.NewServeMux(),
+		engine:       cfg.Engine,
+		sessions:     cfg.Sessions,
+		registry:     cfg.Registry,
+		store:        cfg.Store,
+		brainService: cfg.BrainService,
+		brainStore:   cfg.BrainStore,
+		secretBox:    cfg.SecretBox,
 	}
 	s.registerRoutes()
 	return s
 }
 
-// Run starts the HTTP and gRPC servers. Blocks until ctx is cancelled.
+// Run starts the HTTP and gRPC servers. Blocks until ctx is canceled.
 func (s *Server) Run(ctx context.Context) error {
 	httpServer := &http.Server{
 		Addr:         s.cfg.ListenAddr,
@@ -107,7 +106,7 @@ func (s *Server) Run(ctx context.Context) error {
 			errCh <- fmt.Errorf("grpc listen: %w", err)
 			return
 		}
-		defer ln.Close()
+		defer func() { _ = ln.Close() }()
 		// TODO: Register gRPC services and serve.
 		<-ctx.Done()
 	}()
@@ -194,13 +193,13 @@ func (s *Server) registerRoutes() {
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, "ok")
+	_, _ = fmt.Fprint(w, "ok")
 }
 
 func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	// Check VM orchestrator and storage health.
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, "ready")
+	_, _ = fmt.Fprint(w, "ready")
 }
 
 func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
@@ -276,7 +275,7 @@ func (s *Server) handleStreamTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// TODO: Subscribe to task events and stream them.
-	fmt.Fprintf(w, "data: {\"type\": \"connected\"}\n\n")
+	_, _ = fmt.Fprintf(w, "data: {\"type\": \"connected\"}\n\n")
 	flusher.Flush()
 
 	<-r.Context().Done()
@@ -287,7 +286,7 @@ func (s *Server) handleCancelTask(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	writeJSON(w, http.StatusOK, map[string]string{
 		"task_id": id,
-		"status":  "cancelled",
+		"status":  "canceled",
 	})
 }
 
@@ -382,7 +381,7 @@ func (s *Server) handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := probe.Init(r.Context(), req.Config); err != nil {
+	if err = probe.Init(r.Context(), req.Config); err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid provider config: %v", err))
 		return
 	}
@@ -872,7 +871,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		Password      string `json:"password"`
 		SetupPassword string `json:"setup_password"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err = json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
@@ -956,7 +955,7 @@ func getUserID(r *http.Request) string {
 func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {

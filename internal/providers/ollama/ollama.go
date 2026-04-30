@@ -19,15 +19,20 @@ type Provider struct {
 	httpClient *http.Client
 }
 
+// New creates a new Ollama provider with default HTTP settings.
 func New() *Provider {
 	return &Provider{
 		httpClient: &http.Client{Timeout: 300 * time.Second},
 	}
 }
 
-func (p *Provider) Name() string    { return "ollama" }
+// Name returns the provider identifier.
+func (p *Provider) Name() string { return "ollama" }
+
+// Version returns the provider version.
 func (p *Provider) Version() string { return "1.0.0" }
 
+// Init configures the provider with the given settings.
 func (p *Provider) Init(_ context.Context, config map[string]any) error {
 	p.baseURL = "http://localhost:11434"
 	if url, ok := config["base_url"].(string); ok && url != "" {
@@ -36,8 +41,10 @@ func (p *Provider) Init(_ context.Context, config map[string]any) error {
 	return nil
 }
 
+// Shutdown is a no-op for the HTTP-based Ollama provider.
 func (p *Provider) Shutdown(_ context.Context) error { return nil }
 
+// Models returns the list of supported Ollama models.
 func (p *Provider) Models() []sdk.Model {
 	return []sdk.Model{
 		{ID: "llama3.3", Name: "Llama 3.3 70B", MaxInputTokens: 128000, MaxOutputTokens: 4096, SupportsTools: true},
@@ -46,6 +53,7 @@ func (p *Provider) Models() []sdk.Model {
 	}
 }
 
+// Complete sends a completion request to the local Ollama instance.
 func (p *Provider) Complete(ctx context.Context, req *sdk.CompletionRequest) (*sdk.CompletionResponse, error) {
 	model := req.Model
 	if model == "" {
@@ -78,7 +86,7 @@ func (p *Provider) Complete(ctx context.Context, req *sdk.CompletionRequest) (*s
 	if err != nil {
 		return nil, fmt.Errorf("ollama call: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -102,6 +110,7 @@ func (p *Provider) Complete(ctx context.Context, req *sdk.CompletionRequest) (*s
 	}, nil
 }
 
+// Stream delegates to Complete and wraps the result as a single-event stream.
 func (p *Provider) Stream(ctx context.Context, req *sdk.CompletionRequest) (*sdk.StreamResponse, error) {
 	resp, err := p.Complete(ctx, req)
 	if err != nil {

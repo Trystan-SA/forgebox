@@ -25,7 +25,7 @@ func TestSSEParser_Stream(t *testing.T) {
 	p := NewSSEParser(strings.NewReader(stream))
 	ch := p.Events(context.Background())
 
-	var got []SSEEvent
+	got := make([]SSEEvent, 0, 8)
 	for ev := range ch {
 		got = append(got, ev)
 	}

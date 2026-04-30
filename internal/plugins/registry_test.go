@@ -16,8 +16,8 @@ type mockProvider struct {
 	shutdownDone bool
 }
 
-func (m *mockProvider) Name() string    { return m.name }
-func (m *mockProvider) Version() string { return "1.0.0" }
+func (m *mockProvider) Name() string                                   { return m.name }
+func (m *mockProvider) Version() string                                { return "1.0.0" }
 func (m *mockProvider) Init(_ context.Context, _ map[string]any) error { return nil }
 func (m *mockProvider) Shutdown(_ context.Context) error {
 	m.shutdownDone = true
@@ -27,6 +27,7 @@ func (m *mockProvider) Models() []sdk.Model { return nil }
 func (m *mockProvider) Stream(_ context.Context, _ *sdk.CompletionRequest) (*sdk.StreamResponse, error) {
 	return nil, nil
 }
+
 func (m *mockProvider) Complete(_ context.Context, _ *sdk.CompletionRequest) (*sdk.CompletionResponse, error) {
 	return nil, nil
 }
@@ -34,8 +35,8 @@ func (m *mockProvider) Complete(_ context.Context, _ *sdk.CompletionRequest) (*s
 // mockChannel satisfies sdk.ChannelPlugin.
 type mockChannel struct{ name string }
 
-func (m *mockChannel) Name() string    { return m.name }
-func (m *mockChannel) Version() string { return "1.0.0" }
+func (m *mockChannel) Name() string                                         { return m.name }
+func (m *mockChannel) Version() string                                      { return "1.0.0" }
 func (m *mockChannel) Init(_ context.Context, _ map[string]any) error       { return nil }
 func (m *mockChannel) Shutdown(_ context.Context) error                     { return nil }
 func (m *mockChannel) Listen(_ context.Context, _ sdk.MessageHandler) error { return nil }
@@ -168,8 +169,8 @@ func TestBuiltinTool_Execute_ReturnsHostDelegationError(t *testing.T) {
 
 func TestBuiltinTool_ReadOnlyTools(t *testing.T) {
 	tests := []struct {
-		name     string
-		wantRO   bool
+		name   string
+		wantRO bool
 	}{
 		{"file_read", true},
 		{"glob", true},

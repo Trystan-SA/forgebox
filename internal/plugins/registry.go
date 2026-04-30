@@ -305,5 +305,7 @@ func (t *builtinTool) Execute(_ context.Context, _ json.RawMessage) (*sdk.ToolEx
 	}, nil
 }
 
-func (t *builtinTool) IsReadOnly(_ json.RawMessage) bool    { return t.name == "file_read" || t.name == "glob" || t.name == "grep" }
+func (t *builtinTool) IsReadOnly(_ json.RawMessage) bool {
+	return t.name == "file_read" || t.name == "glob" || t.name == "grep"
+}
 func (t *builtinTool) IsDestructive(_ json.RawMessage) bool { return false }

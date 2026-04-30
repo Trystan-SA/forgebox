@@ -76,11 +76,6 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Format with gofumpt
-        run: |
-          go install mvdan.cc/gofumpt@latest
-          gofumpt -extra -w ./...
-
       - uses: golangci/golangci-lint-action@v6
         with:
           version: latest

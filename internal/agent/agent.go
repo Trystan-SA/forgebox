@@ -54,7 +54,7 @@ type Response struct {
 // HandleConnection processes a single connection from the host.
 // Each connection carries one request-response pair.
 func (a *Agent) HandleConnection(ctx context.Context, conn net.Conn) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	decoder := json.NewDecoder(conn)
 	encoder := json.NewEncoder(conn)

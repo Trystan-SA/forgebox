@@ -33,7 +33,7 @@ func (t *FileReadTool) Execute(ctx context.Context, input json.RawMessage) (*Res
 	if err != nil {
 		return &Result{Content: fmt.Sprintf("cannot open file: %s", err), IsError: true}, nil
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if in.Limit == 0 {
 		in.Limit = 2000

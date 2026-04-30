@@ -26,6 +26,7 @@ type Plugin interface {
 // PluginType identifies what kind of plugin this is.
 type PluginType string
 
+// Plugin type values.
 const (
 	PluginTypeProvider PluginType = "provider"
 	PluginTypeChannel  PluginType = "channel"

@@ -51,7 +51,7 @@ func main() {
 	case "help", "-h", "--help":
 		printUsage()
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
+		_, _ = fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
 		printUsage()
 		os.Exit(1)
 	}
@@ -81,7 +81,7 @@ func cmdServe() {
 		slog.Error("failed to open storage", "error", err)
 		os.Exit(1)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Check if this is a fresh install with no users.
 	userCount, err := store.CountUsers(ctx)
@@ -239,7 +239,7 @@ func cmdRun() {
 		slog.Error("failed to open storage", "error", err)
 		os.Exit(1)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	registry := plugins.NewRegistry()
 	if err := registry.LoadBuiltins(cfg); err != nil {

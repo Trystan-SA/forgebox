@@ -46,7 +46,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, input json.RawMessage) (*Res
 	if err != nil {
 		return &Result{Content: fmt.Sprintf("fetch error: %s", err), IsError: true}, nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Limit response to 1MB.
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))

@@ -73,6 +73,7 @@ type TaskRecord struct {
 // TaskStatus is the lifecycle state of a task.
 type TaskStatus string
 
+// Task status values.
 const (
 	TaskPending   TaskStatus = "pending"
 	TaskRunning   TaskStatus = "running"
@@ -182,6 +183,7 @@ type AutomationFilter struct {
 // AppStatus is the lifecycle state of an app.
 type AppStatus string
 
+// App status values.
 const (
 	AppDraft     AppStatus = "draft"
 	AppDeploying AppStatus = "deploying"

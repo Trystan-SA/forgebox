@@ -52,14 +52,14 @@ func main() {
 		slog.Error("failed to listen on vsock", "port", vsockPort, "error", err)
 		os.Exit(1)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	slog.Info("fb-agent ready", "vsock_port", vsockPort)
 
 	go func() {
 		<-ctx.Done()
 		slog.Info("shutting down")
-		listener.Close()
+		_ = listener.Close()
 	}()
 
 	for {

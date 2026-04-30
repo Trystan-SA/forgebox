@@ -69,7 +69,7 @@ func (p *Provider) Complete(ctx context.Context, req *sdk.CompletionRequest) (*s
 	if err != nil {
 		return nil, fmt.Errorf("api call: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -112,7 +112,7 @@ func (p *Provider) Stream(ctx context.Context, req *sdk.CompletionRequest) (*sdk
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, fmt.Errorf("anthropic API error (HTTP %d): %s", resp.StatusCode, string(respBody))
 	}
 
@@ -120,7 +120,7 @@ func (p *Provider) Stream(ctx context.Context, req *sdk.CompletionRequest) (*sdk
 
 	go func() {
 		defer close(events)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		// TODO: Parse SSE stream from Anthropic API.
 		// For now, read full response and emit as single event.
 		respBody, err := io.ReadAll(resp.Body)

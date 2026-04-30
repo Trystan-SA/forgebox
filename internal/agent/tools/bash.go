@@ -36,7 +36,7 @@ func (t *BashTool) Execute(ctx context.Context, input json.RawMessage) (*Result,
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(execCtx, "bash", "-c", in.Command)
+	cmd := exec.CommandContext(execCtx, "bash", "-c", in.Command) //nolint:gosec // intentional: runs inside a sandboxed VM
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

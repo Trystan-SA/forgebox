@@ -72,6 +72,7 @@ type GraphNode struct {
 // DreamProposalStatus is the lifecycle state of a dream proposal.
 type DreamProposalStatus string
 
+// Dream proposal status values.
 const (
 	DreamPending  DreamProposalStatus = "pending"
 	DreamApproved DreamProposalStatus = "approved"

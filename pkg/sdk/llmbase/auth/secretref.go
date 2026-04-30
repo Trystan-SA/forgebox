@@ -44,7 +44,7 @@ func ResolveSecret(ctx context.Context, ref string) (string, error) {
 		if len(parts) == 0 {
 			return "", fmt.Errorf("empty exec secret command")
 		}
-		cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
+		cmd := exec.CommandContext(ctx, parts[0], parts[1:]...) //nolint:gosec // command comes from operator-controlled config, not user input
 		out, err := cmd.Output()
 		if err != nil {
 			return "", fmt.Errorf("exec secret %q: %w", cmdLine, err)

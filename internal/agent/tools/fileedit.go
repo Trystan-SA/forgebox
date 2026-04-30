@@ -50,7 +50,7 @@ func (t *FileEditTool) Execute(ctx context.Context, input json.RawMessage) (*Res
 	}
 
 	newText := strings.Replace(text, in.OldString, in.NewString, 1)
-	if err := os.WriteFile(in.Path, []byte(newText), 0o644); err != nil {
+	if err := os.WriteFile(in.Path, []byte(newText), 0o644); err != nil { //nolint:gosec // 0644 is correct for user-editable files inside the VM
 		return &Result{Content: fmt.Sprintf("write error: %s", err), IsError: true}, nil
 	}
 

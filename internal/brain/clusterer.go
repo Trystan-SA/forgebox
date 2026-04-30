@@ -23,7 +23,7 @@ func AssignClusters(embeddings [][]float32, k int) []int {
 	dim := len(embeddings[0])
 	assignments := make([]int, n)
 
-	rng := rand.New(rand.NewSource(42))
+	rng := rand.New(rand.NewSource(42)) //nolint:gosec // deterministic seed is intentional for reproducible k-means results
 	centroids := make([][]float32, k)
 	perm := rng.Perm(n)
 	for i := 0; i < k; i++ {

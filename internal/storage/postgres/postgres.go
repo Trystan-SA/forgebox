@@ -15,7 +15,7 @@ import (
 	"log/slog"
 	"time"
 
-	_ "github.com/lib/pq"
+	_ "github.com/lib/pq" // registers the "postgres" database/sql driver
 )
 
 // Store holds the PostgreSQL connection pool for all ForgeBox storage.
@@ -37,13 +37,13 @@ func New(dsn string) (*Store, error) {
 	db.SetConnMaxLifetime(30 * time.Minute)
 
 	if err := db.Ping(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("ping postgres: %w", err)
 	}
 
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("postgres migration: %w", err)
 	}
 
@@ -51,10 +51,17 @@ func New(dsn string) (*Store, error) {
 	return s, nil
 }
 
-func (s *Store) Name() string                                   { return "postgres" }
-func (s *Store) Version() string                                { return "1.0.0" }
+// Name returns the storage plugin name.
+func (s *Store) Name() string { return "postgres" }
+
+// Version returns the storage plugin version.
+func (s *Store) Version() string { return "1.0.0" }
+
+// Init is a no-op; configuration is handled in New.
 func (s *Store) Init(_ context.Context, _ map[string]any) error { return nil }
-func (s *Store) Shutdown(_ context.Context) error               { return s.Close() }
+
+// Shutdown closes the database connection pool.
+func (s *Store) Shutdown(_ context.Context) error { return s.Close() }
 
 // Close closes the database connection pool.
 func (s *Store) Close() error {

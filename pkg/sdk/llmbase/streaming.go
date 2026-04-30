@@ -22,7 +22,7 @@ func StreamPump(ctx context.Context, r io.ReadCloser, mapper EventMapper) <-chan
 	out := make(chan sdk.StreamEvent, 64)
 	go func() {
 		defer close(out)
-		defer r.Close()
+		defer func() { _ = r.Close() }()
 
 		parser := NewSSEParser(r)
 		for ev := range parser.Events(ctx) {

@@ -13,6 +13,7 @@ import (
 
 // --- TaskStore ---
 
+// CreateTask persists a new task record.
 func (s *Store) CreateTask(ctx context.Context, task *sdk.TaskRecord) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO tasks (id, status, prompt, provider, model, user_id, session_id, created_at)
@@ -23,6 +24,7 @@ func (s *Store) CreateTask(ctx context.Context, task *sdk.TaskRecord) error {
 	return err
 }
 
+// GetTask retrieves a task by ID.
 func (s *Store) GetTask(ctx context.Context, id string) (*sdk.TaskRecord, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, status, prompt, result, provider, model, user_id, cost, tokens_in, tokens_out, error, created_at
@@ -39,6 +41,7 @@ func (s *Store) GetTask(ctx context.Context, id string) (*sdk.TaskRecord, error)
 	return &t, nil
 }
 
+// UpdateTask updates status, result, and usage for a task.
 func (s *Store) UpdateTask(ctx context.Context, task *sdk.TaskRecord) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE tasks SET status=$1, result=$2, cost=$3, tokens_in=$4, tokens_out=$5, error=$6, completed_at=$7
@@ -49,6 +52,7 @@ func (s *Store) UpdateTask(ctx context.Context, task *sdk.TaskRecord) error {
 	return err
 }
 
+// ListTasks returns tasks matching the given filter.
 func (s *Store) ListTasks(ctx context.Context, filter sdk.TaskFilter) ([]*sdk.TaskRecord, error) {
 	query := `SELECT id, status, prompt, provider, model, user_id, cost, created_at FROM tasks WHERE 1=1`
 	args := []any{}
@@ -72,7 +76,7 @@ func (s *Store) ListTasks(ctx context.Context, filter sdk.TaskFilter) ([]*sdk.Ta
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var tasks []*sdk.TaskRecord
 	for rows.Next() {
@@ -87,6 +91,7 @@ func (s *Store) ListTasks(ctx context.Context, filter sdk.TaskFilter) ([]*sdk.Ta
 
 // --- SessionStore ---
 
+// CreateSession persists a new session record.
 func (s *Store) CreateSession(ctx context.Context, session *sdk.SessionRecord) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO sessions (id, user_id, provider, model, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -96,6 +101,7 @@ func (s *Store) CreateSession(ctx context.Context, session *sdk.SessionRecord) e
 	return err
 }
 
+// GetSession retrieves a session by ID.
 func (s *Store) GetSession(ctx context.Context, id string) (*sdk.SessionRecord, error) {
 	row := s.db.QueryRowContext(ctx, `SELECT id, user_id, provider, model, created_at, updated_at FROM sessions WHERE id = $1`, id)
 	var sess sdk.SessionRecord
@@ -105,6 +111,7 @@ func (s *Store) GetSession(ctx context.Context, id string) (*sdk.SessionRecord, 
 	return &sess, nil
 }
 
+// UpdateSession updates the updated_at timestamp for a session.
 func (s *Store) UpdateSession(ctx context.Context, session *sdk.SessionRecord) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET updated_at = $1 WHERE id = $2`,
@@ -113,6 +120,7 @@ func (s *Store) UpdateSession(ctx context.Context, session *sdk.SessionRecord) e
 	return err
 }
 
+// ListSessions returns sessions matching the given filter.
 func (s *Store) ListSessions(ctx context.Context, filter sdk.SessionFilter) ([]*sdk.SessionRecord, error) {
 	query := `SELECT id, user_id, provider, model, created_at, updated_at FROM sessions WHERE 1=1`
 	args := []any{}
@@ -131,7 +139,7 @@ func (s *Store) ListSessions(ctx context.Context, filter sdk.SessionFilter) ([]*
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var sessions []*sdk.SessionRecord
 	for rows.Next() {
@@ -144,6 +152,7 @@ func (s *Store) ListSessions(ctx context.Context, filter sdk.SessionFilter) ([]*
 	return sessions, rows.Err()
 }
 
+// AppendMessage adds a message to a session transcript.
 func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg *sdk.Message) error {
 	toolCalls, _ := json.Marshal(msg.ToolCalls)
 	toolResults, _ := json.Marshal(msg.ToolResults)
@@ -155,13 +164,14 @@ func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg *sdk.Me
 	return err
 }
 
+// GetTranscript retrieves all messages for a session in chronological order.
 func (s *Store) GetTranscript(ctx context.Context, sessionID string) ([]sdk.Message, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT role, content, tool_calls, tool_results FROM messages WHERE session_id = $1 ORDER BY created_at`, sessionID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var messages []sdk.Message
 	for rows.Next() {
@@ -217,7 +227,7 @@ func (s *Store) ListAuditEntries(ctx context.Context, filter sdk.AuditFilter) ([
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var entries []*sdk.AuditEntry
 	for rows.Next() {
@@ -263,7 +273,7 @@ func (s *Store) ListUsers(ctx context.Context) ([]*sdk.UserRecord, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var users []*sdk.UserRecord
 	for rows.Next() {
@@ -336,7 +346,7 @@ func (s *Store) ListAutomations(ctx context.Context, filter sdk.AutomationFilter
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var automations []*sdk.AutomationRecord
 	for rows.Next() {
@@ -430,7 +440,7 @@ func (s *Store) ListApps(ctx context.Context, filter sdk.AppFilter) ([]*sdk.AppR
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var apps []*sdk.AppRecord
 	for rows.Next() {
@@ -516,7 +526,7 @@ func (s *Store) ListProviders(ctx context.Context) ([]*sdk.ProviderRecord, error
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []*sdk.ProviderRecord
 	for rows.Next() {

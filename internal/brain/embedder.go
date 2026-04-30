@@ -60,7 +60,7 @@ func (e *OpenAIEmbedder) Embed(ctx context.Context, text string) ([]float32, err
 	if err != nil {
 		return nil, fmt.Errorf("embedding API call: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

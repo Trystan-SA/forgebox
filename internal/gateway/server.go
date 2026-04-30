@@ -107,7 +107,7 @@ func (s *Server) Run(ctx context.Context) error {
 			errCh <- fmt.Errorf("grpc listen: %w", err)
 			return
 		}
-		defer ln.Close()
+		defer func() { _ = ln.Close() }()
 		// TODO: Register gRPC services and serve.
 		<-ctx.Done()
 	}()
@@ -194,13 +194,13 @@ func (s *Server) registerRoutes() {
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, "ok")
+	_, _ = fmt.Fprint(w, "ok")
 }
 
 func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	// Check VM orchestrator and storage health.
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, "ready")
+	_, _ = fmt.Fprint(w, "ready")
 }
 
 func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
@@ -276,7 +276,7 @@ func (s *Server) handleStreamTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// TODO: Subscribe to task events and stream them.
-	fmt.Fprintf(w, "data: {\"type\": \"connected\"}\n\n")
+	_, _ = fmt.Fprintf(w, "data: {\"type\": \"connected\"}\n\n")
 	flusher.Flush()
 
 	<-r.Context().Done()
@@ -956,7 +956,7 @@ func getUserID(r *http.Request) string {
 func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {

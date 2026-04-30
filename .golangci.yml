@@ -85,3 +85,4 @@ issues:
     - path: \.pb\.go$
       linters:
         - all
+# end

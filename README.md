@@ -26,12 +26,16 @@ without risk to host infrastructure.
 Requires Docker. Everything else (Go, Node, Postgres) runs in containers.
 
 ```bash
-# Set provider API keys
+# Set provider API keys (or skip and add them later from the dashboard)
 export ANTHROPIC_API_KEY=sk-...
 export OPENAI_API_KEY=sk-...
 
 # Bootstrap the first admin account
 export FORGEBOX_FIRST_PASSWORD=change-me
+
+# Encryption key for provider credentials added at runtime via the dashboard.
+# Required. Treat as a separate secret from the DB — backups need both.
+export FORGEBOX_DB_ENCRYPTION_KEY=$(openssl rand -hex 32)
 
 # Start the stack
 docker compose -f docker-compose.dev.yml up
@@ -39,12 +43,12 @@ docker compose -f docker-compose.dev.yml up
 
 Services:
 
-| Service   | Port | Description                     |
-| --------- | ---- | ------------------------------- |
-| backend   | 8420 | Go API server (gateway)         |
-| backend   | 8421 | gRPC listener                   |
-| dashboard | 3000 | Vite dev server (web UI)        |
-| postgres  | 5432 | Optional; SQLite is the default |
+| Service   | Port | Description                                         |
+| --------- | ---- | --------------------------------------------------- |
+| backend   | 8420 | Go API server (gateway)                             |
+| backend   | 8421 | gRPC listener                                       |
+| dashboard | 3000 | Vite dev server (web UI)                            |
+| postgres  | 5432 | Required — single store for everything (+ pgvector) |
 
 Open http://localhost:3000 and sign in with `FORGEBOX_FIRST_PASSWORD`.
 

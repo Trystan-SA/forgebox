@@ -59,11 +59,26 @@ export interface ToolResult {
 	is_error: boolean;
 }
 
+export type ProviderType =
+	| 'anthropic'
+	| 'anthropic-api'
+	| 'anthropic-subscription'
+	| 'openai'
+	| 'ollama';
+
 export interface Provider {
 	name: string;
 	version: string;
 	type: 'provider';
 	builtin: boolean;
+	id?: string;
+	provider_type?: ProviderType;
+}
+
+export interface CreateProviderRequest {
+	type: ProviderType;
+	name: string;
+	config: Record<string, unknown>;
 }
 
 export interface ToolSchema {

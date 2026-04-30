@@ -1,3 +1,11 @@
+// Package postgres implements ForgeBox storage on PostgreSQL.
+//
+// A single Store satisfies the full sdk.StoragePlugin (tasks, sessions,
+// audit, users, automations, apps, providers) plus sdk.BrainStore (brain
+// files, links, hashtags, graph, dream proposals — those use pgvector).
+//
+// One *sql.DB is shared across all responsibilities; brain features add
+// their own tables alongside the core storage tables.
 package postgres
 
 import (
@@ -5,45 +13,169 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"time"
 
 	_ "github.com/lib/pq"
 )
 
-// BrainDB holds the PostgreSQL connection pool for brain storage.
-type BrainDB struct {
+// Store holds the PostgreSQL connection pool for all ForgeBox storage.
+type Store struct {
 	db *sql.DB
 }
 
-// New opens a PostgreSQL connection and runs brain migrations.
-func New(dsn string) (*BrainDB, error) {
+// New opens a PostgreSQL connection and runs all migrations.
+func New(dsn string) (*Store, error) {
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open postgres: %w", err)
 	}
+
+	// Bound the pool — lib/pq's default is unlimited, which lets a burst of
+	// concurrent gateway requests open arbitrary numbers of connections.
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(30 * time.Minute)
 
 	if err := db.Ping(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("ping postgres: %w", err)
 	}
 
-	bdb := &BrainDB{db: db}
-	if err := bdb.migrate(); err != nil {
+	s := &Store{db: db}
+	if err := s.migrate(); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("brain migration: %w", err)
+		return nil, fmt.Errorf("postgres migration: %w", err)
 	}
 
-	slog.Info("brain storage connected", "driver", "postgres")
-	return bdb, nil
+	slog.Info("storage connected", "driver", "postgres")
+	return s, nil
 }
+
+func (s *Store) Name() string                                   { return "postgres" }
+func (s *Store) Version() string                                { return "1.0.0" }
+func (s *Store) Init(_ context.Context, _ map[string]any) error { return nil }
+func (s *Store) Shutdown(_ context.Context) error               { return s.Close() }
 
 // Close closes the database connection pool.
-func (b *BrainDB) Close() error {
-	return b.db.Close()
+func (s *Store) Close() error {
+	return s.db.Close()
 }
 
-func (b *BrainDB) migrate() error {
+func (s *Store) migrate() error {
 	migrations := []string{
 		`CREATE EXTENSION IF NOT EXISTS vector`,
+
+		// --- Core storage tables ---
+
+		`CREATE TABLE IF NOT EXISTS tasks (
+			id TEXT PRIMARY KEY,
+			status TEXT NOT NULL DEFAULT 'pending',
+			prompt TEXT NOT NULL,
+			result TEXT,
+			provider TEXT,
+			model TEXT,
+			user_id TEXT,
+			session_id TEXT,
+			cost DOUBLE PRECISION DEFAULT 0,
+			tokens_in INTEGER DEFAULT 0,
+			tokens_out INTEGER DEFAULT 0,
+			error TEXT,
+			created_at TIMESTAMPTZ NOT NULL,
+			started_at TIMESTAMPTZ,
+			completed_at TIMESTAMPTZ
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)`,
+
+		`CREATE TABLE IF NOT EXISTS sessions (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			provider TEXT,
+			model TEXT,
+			created_at TIMESTAMPTZ NOT NULL,
+			updated_at TIMESTAMPTZ NOT NULL
+		)`,
+
+		`CREATE TABLE IF NOT EXISTS messages (
+			id TEXT PRIMARY KEY,
+			session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+			role TEXT NOT NULL,
+			content TEXT,
+			tool_calls TEXT,
+			tool_results TEXT,
+			created_at TIMESTAMPTZ NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id)`,
+
+		`CREATE TABLE IF NOT EXISTS audit_log (
+			id TEXT PRIMARY KEY,
+			timestamp TIMESTAMPTZ NOT NULL,
+			user_id TEXT,
+			task_id TEXT,
+			action TEXT NOT NULL,
+			tool TEXT,
+			decision TEXT NOT NULL,
+			reason TEXT
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_audit_task ON audit_log(task_id)`,
+
+		`CREATE TABLE IF NOT EXISTS users (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			email TEXT UNIQUE,
+			password_hash TEXT NOT NULL DEFAULT '',
+			role TEXT NOT NULL DEFAULT 'viewer',
+			team_ids TEXT,
+			disabled BOOLEAN NOT NULL DEFAULT FALSE
+		)`,
+
+		`CREATE TABLE IF NOT EXISTS automations (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			created_by TEXT NOT NULL,
+			sharing TEXT NOT NULL DEFAULT 'personal',
+			team_id TEXT,
+			trigger_config TEXT NOT NULL DEFAULT '{}',
+			nodes TEXT NOT NULL DEFAULT '[]',
+			edges TEXT NOT NULL DEFAULT '[]',
+			enabled BOOLEAN NOT NULL DEFAULT TRUE,
+			created_at TIMESTAMPTZ NOT NULL,
+			updated_at TIMESTAMPTZ NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_automations_user ON automations(created_by)`,
+		`CREATE INDEX IF NOT EXISTS idx_automations_team ON automations(team_id)`,
+
+		`CREATE TABLE IF NOT EXISTS apps (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			created_by TEXT NOT NULL,
+			sharing TEXT NOT NULL DEFAULT 'personal',
+			team_id TEXT,
+			status TEXT NOT NULL DEFAULT 'draft',
+			tools TEXT NOT NULL DEFAULT '[]',
+			config TEXT NOT NULL DEFAULT '{}',
+			url TEXT NOT NULL DEFAULT '',
+			enabled BOOLEAN NOT NULL DEFAULT TRUE,
+			created_at TIMESTAMPTZ NOT NULL,
+			updated_at TIMESTAMPTZ NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_apps_user ON apps(created_by)`,
+		`CREATE INDEX IF NOT EXISTS idx_apps_team ON apps(team_id)`,
+
+		`CREATE TABLE IF NOT EXISTS providers (
+			id TEXT PRIMARY KEY,
+			type TEXT NOT NULL,
+			name TEXT NOT NULL UNIQUE,
+			config_encrypted TEXT NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL,
+			updated_at TIMESTAMPTZ NOT NULL
+		)`,
+
+		// --- Brain tables ---
+
 
 		`CREATE TABLE IF NOT EXISTS brains (
 			id TEXT PRIMARY KEY,
@@ -110,7 +242,7 @@ func (b *BrainDB) migrate() error {
 	}
 
 	for _, m := range migrations {
-		if _, err := b.db.ExecContext(context.Background(), m); err != nil {
+		if _, err := s.db.ExecContext(context.Background(), m); err != nil {
 			return fmt.Errorf("migration failed: %w\nSQL: %s", err, m)
 		}
 	}

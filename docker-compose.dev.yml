@@ -29,11 +29,11 @@ services:
       - FORGEBOX_VM_MODE=local
       - FORGEBOX_LISTEN=:8420
       - FORGEBOX_GRPC_LISTEN=:8421
-      - FORGEBOX_STORAGE_PATH=/workspace/data/forgebox.db
+      - FORGEBOX_DATABASE_URL=postgres://forgebox:forgebox@postgres:5432/forgebox?sslmode=disable
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - FORGEBOX_FIRST_PASSWORD=${FORGEBOX_FIRST_PASSWORD:-}
-      - FORGEBOX_BRAIN_POSTGRES_DSN=postgres://forgebox:forgebox@postgres:5432/forgebox?sslmode=disable
+      - FORGEBOX_DB_ENCRYPTION_KEY=${FORGEBOX_DB_ENCRYPTION_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy

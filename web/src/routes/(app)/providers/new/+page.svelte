@@ -1,41 +1,87 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { pushToast } from '$lib/stores/toasts.svelte';
+	import { createProvider } from '$lib/api/client';
+	import { refreshProviders } from '$lib/stores/providers.svelte';
+	import type { ProviderType } from '$lib/api/types';
 
-	type ProviderType = 'anthropic' | 'openai' | 'google' | 'ollama' | 'custom';
+	type ProviderOption = {
+		value: ProviderType;
+		label: string;
+		placeholder: string;
+		credentialLabel: string;
+		credentialField: 'api_key' | 'token' | null;
+		hint?: string;
+		showBaseUrl: boolean;
+	};
 
-	const providerOptions: { value: ProviderType; label: string; placeholder: string }[] = [
-		{ value: 'anthropic', label: 'Anthropic', placeholder: 'sk-ant-...' },
-		{ value: 'openai', label: 'OpenAI', placeholder: 'sk-...' },
-		{ value: 'google', label: 'Google', placeholder: 'AIza...' },
-		{ value: 'ollama', label: 'Ollama', placeholder: 'No key required' },
-		{ value: 'custom', label: 'Custom (OpenAI-compatible)', placeholder: 'sk-...' }
+	const providerOptions: ProviderOption[] = [
+		{
+			value: 'anthropic-api',
+			label: 'Anthropic',
+			placeholder: 'sk-ant-api-...',
+			credentialLabel: 'API Key',
+			credentialField: 'api_key',
+			showBaseUrl: false
+		},
+		{
+			value: 'anthropic-subscription',
+			label: 'Claude Subscription',
+			placeholder: 'sk-ant-oat01-...',
+			credentialLabel: 'OAuth Setup Token',
+			credentialField: 'token',
+			hint: 'Generate a token by running `claude setup-token` with the official Claude CLI while logged into your Claude Max account.',
+			showBaseUrl: false
+		},
+		{
+			value: 'openai',
+			label: 'OpenAI',
+			placeholder: 'sk-...',
+			credentialLabel: 'API Key',
+			credentialField: 'api_key',
+			showBaseUrl: false
+		},
+		{
+			value: 'ollama',
+			label: 'Ollama',
+			placeholder: 'No key required',
+			credentialLabel: 'API Key',
+			credentialField: null,
+			showBaseUrl: true
+		}
 	];
 
-	let type = $state<ProviderType>('anthropic');
+	let type = $state<ProviderType>('anthropic-api');
 	let name = $state('');
 	let apiKey = $state('');
 	let baseUrl = $state('');
 	let saving = $state(false);
 
 	const selected = $derived(providerOptions.find((p) => p.value === type)!);
-	const canSave = $derived(name.trim().length > 0 && (type === 'ollama' || apiKey.trim().length > 0) && !saving);
+	const canSave = $derived(
+		name.trim().length > 0 &&
+			(selected.credentialField === null || apiKey.trim().length > 0) &&
+			!saving
+	);
 
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
 		if (!canSave) return;
 		saving = true;
 		try {
-			const existing = JSON.parse(localStorage.getItem('forgebox_providers') ?? '[]');
-			existing.push({
-				id: crypto.randomUUID().slice(0, 8),
+			const config: Record<string, unknown> = {};
+			if (selected.credentialField && apiKey.trim()) {
+				config[selected.credentialField] = apiKey.trim();
+			}
+			if (baseUrl.trim()) {
+				config.base_url = baseUrl.trim();
+			}
+			await createProvider({
 				type,
 				name: name.trim(),
-				api_key: apiKey.trim(),
-				base_url: baseUrl.trim() || undefined,
-				created_at: new Date().toISOString()
+				config
 			});
-			localStorage.setItem('forgebox_providers', JSON.stringify(existing));
+			await refreshProviders();
 			pushToast('Provider added', 'success');
 			goto('/providers');
 		} catch (err) {
@@ -87,9 +133,9 @@
 				/>
 			</label>
 
-			{#if type !== 'ollama'}
+			{#if selected.credentialField}
 				<label class="fld">
-					<span class="fld__lbl">API Key</span>
+					<span class="fld__lbl">{selected.credentialLabel}</span>
 					<input
 						class="fld__input"
 						type="password"
@@ -99,18 +145,20 @@
 						disabled={saving}
 						autocomplete="off"
 					/>
+					{#if selected.hint}
+						<span class="fld__hint">{selected.hint}</span>
+					{/if}
 				</label>
 			{/if}
 
-			{#if type === 'ollama' || type === 'custom'}
+			{#if selected.showBaseUrl}
 				<label class="fld">
-					<span class="fld__lbl">Base URL {type === 'custom' ? '' : '(optional)'}</span>
+					<span class="fld__lbl">Base URL (optional)</span>
 					<input
 						class="fld__input"
 						type="url"
 						bind:value={baseUrl}
-						placeholder={type === 'ollama' ? 'http://localhost:11434' : 'https://api.example.com/v1'}
-						required={type === 'custom'}
+						placeholder="http://localhost:11434"
 						disabled={saving}
 					/>
 				</label>
@@ -254,6 +302,12 @@
 			font-size: $text-sm;
 			padding: 7px $space-3;
 			border-radius: $radius-md;
+		}
+
+		&__hint {
+			font-size: 11px;
+			color: $neutral-500;
+			line-height: 1.4;
 		}
 	}
 </style>

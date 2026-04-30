@@ -15,6 +15,7 @@ type StoragePlugin interface {
 	UserStore
 	AutomationStore
 	AppStore
+	ProviderStore
 }
 
 // TaskStore manages task persistence.
@@ -213,4 +214,27 @@ type AppFilter struct {
 	Status AppStatus
 	Limit  int
 	Offset int
+}
+
+// ProviderStore manages user-configured LLM provider credentials.
+//
+// Providers are global to the install (no per-user scoping). The Config field
+// is opaque to the store — it is the AEAD-sealed envelope produced by
+// internal/crypto.SecretBox. The store never sees plaintext secrets.
+type ProviderStore interface {
+	CreateProvider(ctx context.Context, p *ProviderRecord) error
+	GetProvider(ctx context.Context, id string) (*ProviderRecord, error)
+	UpdateProvider(ctx context.Context, p *ProviderRecord) error
+	DeleteProvider(ctx context.Context, id string) error
+	ListProviders(ctx context.Context) ([]*ProviderRecord, error)
+}
+
+// ProviderRecord is one configured provider instance.
+type ProviderRecord struct {
+	ID              string    `json:"id"`
+	Type            string    `json:"type"`             // e.g. "anthropic", "anthropic-subscription"
+	Name            string    `json:"name"`             // user-supplied display name; unique; used as registry key
+	ConfigEncrypted string    `json:"-"`                // AEAD-sealed JSON of the provider config map
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }

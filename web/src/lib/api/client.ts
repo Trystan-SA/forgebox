@@ -2,6 +2,7 @@ import type {
 	Task,
 	Session,
 	Provider,
+	CreateProviderRequest,
 	ToolSchema,
 	AuditEntry,
 	CreateTaskRequest,
@@ -136,9 +137,20 @@ export async function sendMessage(
 	});
 }
 
-// --- Discovery ---
+// --- Providers ---
 export async function listProviders(): Promise<Provider[]> {
 	return (await request<Provider[] | null>('/providers')) ?? [];
+}
+
+export async function createProvider(req: CreateProviderRequest): Promise<Provider> {
+	return request('/providers', {
+		method: 'POST',
+		body: JSON.stringify(req)
+	});
+}
+
+export async function deleteProvider(id: string): Promise<{ id: string; status: string }> {
+	return request(`/providers/${id}`, { method: 'DELETE' });
 }
 
 export async function listTools(): Promise<ToolSchema[]> {

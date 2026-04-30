@@ -23,6 +23,7 @@ import (
 
 	"github.com/forgebox/forgebox/internal/auth"
 	"github.com/forgebox/forgebox/internal/brain"
+	fbcrypto "github.com/forgebox/forgebox/internal/crypto"
 	"github.com/forgebox/forgebox/internal/engine"
 	"github.com/forgebox/forgebox/internal/plugins"
 	"github.com/forgebox/forgebox/internal/sessions"
@@ -40,6 +41,7 @@ type Config struct {
 	Store          sdk.StoragePlugin
 	BrainService   *brain.Service
 	BrainStore     sdk.BrainStore
+	SecretBox      *fbcrypto.SecretBox
 }
 
 // Server is the main ForgeBox API server.
@@ -52,6 +54,7 @@ type Server struct {
 	store         sdk.StoragePlugin
 	brainService  *brain.Service
 	brainStore    sdk.BrainStore
+	secretBox     *fbcrypto.SecretBox
 }
 
 // New creates a new gateway server.
@@ -65,6 +68,7 @@ func New(cfg Config) *Server {
 		store:         cfg.Store,
 		brainService:  cfg.BrainService,
 		brainStore:    cfg.BrainStore,
+		secretBox:     cfg.SecretBox,
 	}
 	s.registerRoutes()
 	return s
@@ -165,8 +169,10 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("PUT /api/v1/apps/{id}", s.handleUpdateApp)
 	s.mux.HandleFunc("DELETE /api/v1/apps/{id}", s.handleDeleteApp)
 
-	// Discovery endpoints.
+	// Provider endpoints.
 	s.mux.HandleFunc("GET /api/v1/providers", s.handleListProviders)
+	s.mux.HandleFunc("POST /api/v1/providers", s.handleCreateProvider)
+	s.mux.HandleFunc("DELETE /api/v1/providers/{id}", s.handleDeleteProvider)
 	s.mux.HandleFunc("GET /api/v1/tools", s.handleListTools)
 
 	// Brain endpoints.
@@ -334,6 +340,115 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
 	providers := s.registry.ListProviders()
 	writeJSON(w, http.StatusOK, providers)
+}
+
+type createProviderRequest struct {
+	Type   string         `json:"type"`
+	Name   string         `json:"name"`
+	Config map[string]any `json:"config"`
+}
+
+func (s *Server) handleCreateProvider(w http.ResponseWriter, r *http.Request) {
+	if s.secretBox == nil {
+		writeError(w, http.StatusServiceUnavailable, "encryption key not configured")
+		return
+	}
+	var req createProviderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.Type = strings.TrimSpace(req.Type)
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Type == "" || req.Name == "" {
+		writeError(w, http.StatusBadRequest, "type and name are required")
+		return
+	}
+	if req.Config == nil {
+		req.Config = map[string]any{}
+	}
+
+	// Conflict if the registry already serves this name (built-in or DB-backed).
+	if _, err := s.registry.GetProvider(req.Name); err == nil {
+		writeError(w, http.StatusConflict, fmt.Sprintf("provider name %q already in use", req.Name))
+		return
+	}
+
+	// Validate by instantiating + Init-ing a throwaway plugin. This catches bad
+	// types and bad config (wrong key prefix, missing fields, etc.) before we
+	// persist anything.
+	probe, err := loadProviderProbe(req.Type)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := probe.Init(r.Context(), req.Config); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid provider config: %v", err))
+		return
+	}
+	_ = probe.Shutdown(r.Context())
+
+	configJSON, err := json.Marshal(req.Config)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "marshal config")
+		return
+	}
+	sealed, err := s.secretBox.Encrypt(configJSON)
+	if err != nil {
+		slog.Error("encrypt provider config", "error", err)
+		writeError(w, http.StatusInternalServerError, "encrypt config")
+		return
+	}
+
+	rec := &sdk.ProviderRecord{
+		Type:            req.Type,
+		Name:            req.Name,
+		ConfigEncrypted: sealed,
+	}
+	if err := s.store.CreateProvider(r.Context(), rec); err != nil {
+		slog.Error("create provider row", "error", err)
+		writeError(w, http.StatusInternalServerError, "save provider")
+		return
+	}
+	if err := s.registry.AddStoredProvider(r.Context(), rec, s.secretBox); err != nil {
+		// Roll back the row so the next attempt with the same name works.
+		_ = s.store.DeleteProvider(r.Context(), rec.ID)
+		slog.Error("register provider", "error", err)
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("register provider: %v", err))
+		return
+	}
+	writeJSON(w, http.StatusCreated, sdk.PluginMeta{
+		ID:           rec.ID,
+		Name:         rec.Name,
+		Type:         sdk.PluginTypeProvider,
+		ProviderType: rec.Type,
+	})
+}
+
+func (s *Server) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+	rec, err := s.store.GetProvider(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "provider not found")
+		return
+	}
+	if err := s.store.DeleteProvider(r.Context(), id); err != nil {
+		slog.Error("delete provider row", "error", err)
+		writeError(w, http.StatusInternalServerError, "delete provider")
+		return
+	}
+	s.registry.UnregisterProviderByID(r.Context(), id)
+	writeJSON(w, http.StatusOK, map[string]string{"id": rec.ID, "status": "deleted"})
+}
+
+// loadProviderProbe constructs an unconfigured plugin matching the registry
+// factory so the handler can validate config without exposing registry internals.
+func loadProviderProbe(name string) (sdk.ProviderPlugin, error) {
+	return plugins.NewProvider(name)
 }
 
 func (s *Server) handleListTools(w http.ResponseWriter, r *http.Request) {

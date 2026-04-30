@@ -60,20 +60,10 @@ type OIDCConfig struct {
 	ClientSecret string `yaml:"client_secret"`
 }
 
-// StorageConfig configures the storage backend.
+// StorageConfig configures the (PostgreSQL) storage backend. PostgreSQL is
+// the only supported backend; the same DSN is used for core storage and the
+// brain feature (pgvector lives in the same database).
 type StorageConfig struct {
-	Driver   string         `yaml:"driver"` // "sqlite", "postgres"
-	SQLite   SQLiteConfig   `yaml:"sqlite,omitempty"`
-	Postgres PostgresConfig `yaml:"postgres,omitempty"`
-}
-
-// SQLiteConfig configures the SQLite storage backend.
-type SQLiteConfig struct {
-	Path string `yaml:"path"`
-}
-
-// PostgresConfig configures the PostgreSQL storage backend.
-type PostgresConfig struct {
 	DSN string `yaml:"dsn"`
 }
 
@@ -84,11 +74,12 @@ type TelemetryConfig struct {
 	Traces       bool   `yaml:"traces"`
 }
 
-// BrainConfig configures the brain knowledge base feature.
+// BrainConfig configures the brain knowledge base feature. The DB connection
+// is shared with the core store (Storage.DSN); only embedding settings live
+// here.
 type BrainConfig struct {
 	EmbeddingProvider string `yaml:"embedding_provider"` // default provider for embeddings
 	EmbeddingModel    string `yaml:"embedding_model"`    // default model for embeddings
-	PostgresDSN       string `yaml:"postgres_dsn"`       // pgvector-enabled PostgreSQL DSN
 	DreamSchedule     string `yaml:"dream_schedule"`     // cron expression, default "0 2 * * *"
 }
 
@@ -116,17 +107,13 @@ func Defaults() *Config {
 			Method: "local",
 		},
 		Storage: StorageConfig{
-			Driver: "sqlite",
-			SQLite: SQLiteConfig{
-				Path: "/var/lib/forgebox/forgebox.db",
-			},
+			DSN: "postgres://forgebox:forgebox@postgres:5432/forgebox?sslmode=disable",
 		},
 		Telemetry: TelemetryConfig{
 			Metrics: true,
 			Traces:  true,
 		},
 		Brain: BrainConfig{
-			PostgresDSN:   "postgres://forgebox:forgebox@postgres:5432/forgebox?sslmode=disable",
 			DreamSchedule: "0 2 * * *",
 		},
 	}
@@ -176,17 +163,19 @@ func (c *Config) applyEnvOverrides() {
 	if v := os.Getenv("FORGEBOX_GRPC_LISTEN"); v != "" {
 		c.Server.GRPCListen = v
 	}
-	if v := os.Getenv("FORGEBOX_STORAGE_PATH"); v != "" {
-		c.Storage.SQLite.Path = v
-	}
 	if v := os.Getenv("FORGEBOX_OTLP_ENDPOINT"); v != "" {
 		c.Telemetry.OTLPEndpoint = v
 	}
 	if v := os.Getenv("FORGEBOX_VM_MODE"); v != "" {
 		c.VM.Mode = v
 	}
-	if v := os.Getenv("FORGEBOX_BRAIN_POSTGRES_DSN"); v != "" {
-		c.Brain.PostgresDSN = v
+	if v := os.Getenv("FORGEBOX_DATABASE_URL"); v != "" {
+		c.Storage.DSN = v
+	} else if v := os.Getenv("DATABASE_URL"); v != "" {
+		c.Storage.DSN = v
+	} else if v := os.Getenv("FORGEBOX_BRAIN_POSTGRES_DSN"); v != "" {
+		// Backward-compat for installs that already set the brain-specific var.
+		c.Storage.DSN = v
 	}
 
 	// Provider API keys from environment.

@@ -24,6 +24,7 @@ import (
 	"github.com/forgebox/forgebox/internal/brain"
 	fbcrypto "github.com/forgebox/forgebox/internal/crypto"
 	"github.com/forgebox/forgebox/internal/engine"
+	"github.com/forgebox/forgebox/internal/events"
 	"github.com/forgebox/forgebox/internal/plugins"
 	"github.com/forgebox/forgebox/internal/sessions"
 	"github.com/forgebox/forgebox/pkg/sdk"
@@ -41,6 +42,9 @@ type Config struct {
 	BrainService   *brain.Service
 	BrainStore     sdk.BrainStore
 	SecretBox      *fbcrypto.SecretBox
+	// Events is the in-process event bus that producers publish to and the
+	// WebSocket Hub fans out to connected clients. Required.
+	Events *events.Bus
 }
 
 // Server is the main ForgeBox API server.
@@ -54,10 +58,15 @@ type Server struct {
 	brainService *brain.Service
 	brainStore   sdk.BrainStore
 	secretBox    *fbcrypto.SecretBox
+	hub          *Hub
 }
 
-// New creates a new gateway server.
+// New creates a new gateway server. The event bus must be supplied; the
+// server creates its own Hub bound to that bus.
 func New(cfg Config) *Server {
+	if cfg.Events == nil {
+		cfg.Events = events.New(0)
+	}
 	s := &Server{
 		cfg:          cfg,
 		mux:          http.NewServeMux(),
@@ -68,6 +77,7 @@ func New(cfg Config) *Server {
 		brainService: cfg.BrainService,
 		brainStore:   cfg.BrainStore,
 		secretBox:    cfg.SecretBox,
+		hub:          NewHub(cfg.Events, 0),
 	}
 	s.registerRoutes()
 	return s
@@ -85,6 +95,13 @@ func (s *Server) Run(ctx context.Context) error {
 
 	var wg sync.WaitGroup
 	errCh := make(chan error, 2)
+
+	// WebSocket Hub event-dispatch loop.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		s.hub.Run(ctx)
+	}()
 
 	// HTTP server.
 	wg.Add(1)
@@ -134,10 +151,12 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
 	s.mux.HandleFunc("GET /readyz", s.handleReadyz)
 
+	// WebSocket endpoint for real-time events (replaces per-task SSE).
+	s.mux.HandleFunc("GET /api/v1/ws", s.handleWS)
+
 	// Task endpoints.
 	s.mux.HandleFunc("POST /api/v1/tasks", s.handleCreateTask)
 	s.mux.HandleFunc("GET /api/v1/tasks/{id}", s.handleGetTask)
-	s.mux.HandleFunc("GET /api/v1/tasks/{id}/stream", s.handleStreamTask)
 	s.mux.HandleFunc("DELETE /api/v1/tasks/{id}", s.handleCancelTask)
 	s.mux.HandleFunc("GET /api/v1/tasks", s.handleListTasks)
 
@@ -260,25 +279,6 @@ func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, task)
-}
-
-func (s *Server) handleStreamTask(w http.ResponseWriter, r *http.Request) {
-	// SSE streaming endpoint.
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		writeError(w, http.StatusInternalServerError, "streaming not supported")
-		return
-	}
-
-	// TODO: Subscribe to task events and stream them.
-	_, _ = fmt.Fprintf(w, "data: {\"type\": \"connected\"}\n\n")
-	flusher.Flush()
-
-	<-r.Context().Done()
 }
 
 func (s *Server) handleCancelTask(w http.ResponseWriter, r *http.Request) {

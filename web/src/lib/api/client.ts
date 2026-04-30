@@ -22,6 +22,7 @@ import type {
 	UpdateAppRequest
 } from './types';
 import { getBaseUrl } from '$lib/platform';
+import { subscribe as subscribeSocket } from '$lib/stores/socket.svelte';
 
 function getToken(): string | null {
 	if (typeof window === 'undefined') return null;
@@ -96,26 +97,31 @@ export async function cancelTask(
 export function streamTask(
 	id: string,
 	onEvent: (event: TaskEvent) => void,
-	onError?: (error: Error) => void
+	_onError?: (error: Error) => void
 ): () => void {
-	const base = getBaseUrl();
-	const source = new EventSource(`${base}/tasks/${id}/stream`);
+	type TokenPayload = { task_id: string; delta: string };
+	type StatusPayload = { task_id: string; status?: TaskEvent['status']; error?: string };
 
-	source.onmessage = (e) => {
-		try {
-			const event: TaskEvent = JSON.parse(e.data);
-			onEvent(event);
-		} catch {
-			// Ignore parse errors for heartbeat/keepalive messages.
+	const unsubToken = subscribeSocket('task.token', (raw) => {
+		const p = raw as TokenPayload;
+		if (p?.task_id !== id) return;
+		onEvent({ type: 'text_delta', text: p.delta });
+	});
+
+	const unsubStatus = subscribeSocket('task.updated', (raw) => {
+		const p = raw as StatusPayload;
+		if (p?.task_id !== id) return;
+		if (p.error) {
+			onEvent({ type: 'error', error: p.error });
+		} else if (p.status) {
+			onEvent({ type: 'status_update', status: p.status });
 		}
-	};
+	});
 
-	source.onerror = () => {
-		onError?.(new Error('SSE connection lost'));
-		source.close();
+	return () => {
+		unsubToken();
+		unsubStatus();
 	};
-
-	return () => source.close();
 }
 
 // --- Sessions ---

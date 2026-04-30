@@ -28,8 +28,42 @@ permissions:
   contents: read
 
 jobs:
-  ci:
-    name: vet · lint · build · test
+  verify:
+    name: go mod verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - run: go mod verify
+
+  vet:
+    name: vet
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - run: go vet ./...
+
+  lint:
+    name: lint
+    needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -42,22 +76,42 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: go mod verify
-        run: go mod verify
-
-      - name: go vet
-        run: go vet ./...
-
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+      - uses: golangci/golangci-lint-action@v6
         with:
           version: latest
           args: --timeout=5m
-          # Action manages its own analysis cache; setup-go handles module cache.
           skip-cache: false
 
-      - name: build
-        run: go build -trimpath ./...
+  build:
+    name: build
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
-      - name: test
-        run: go test -race -count=1 ./internal/... ./pkg/... ./cmd/...
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - run: go build -trimpath ./...
+
+  test:
+    name: test
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - run: go test -race -count=1 ./internal/... ./pkg/... ./cmd/...

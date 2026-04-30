@@ -7,6 +7,8 @@ package gateway
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,9 +19,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"crypto/rand"
-	"encoding/hex"
 
 	"github.com/forgebox/forgebox/internal/auth"
 	"github.com/forgebox/forgebox/internal/brain"
@@ -46,29 +45,29 @@ type Config struct {
 
 // Server is the main ForgeBox API server.
 type Server struct {
-	cfg           Config
-	mux           *http.ServeMux
-	engine        *engine.Engine
-	sessions      *sessions.Manager
-	registry      *plugins.Registry
-	store         sdk.StoragePlugin
-	brainService  *brain.Service
-	brainStore    sdk.BrainStore
-	secretBox     *fbcrypto.SecretBox
+	cfg          Config
+	mux          *http.ServeMux
+	engine       *engine.Engine
+	sessions     *sessions.Manager
+	registry     *plugins.Registry
+	store        sdk.StoragePlugin
+	brainService *brain.Service
+	brainStore   sdk.BrainStore
+	secretBox    *fbcrypto.SecretBox
 }
 
 // New creates a new gateway server.
 func New(cfg Config) *Server {
 	s := &Server{
-		cfg:           cfg,
-		mux:           http.NewServeMux(),
-		engine:        cfg.Engine,
-		sessions:      cfg.Sessions,
-		registry:      cfg.Registry,
-		store:         cfg.Store,
-		brainService:  cfg.BrainService,
-		brainStore:    cfg.BrainStore,
-		secretBox:     cfg.SecretBox,
+		cfg:          cfg,
+		mux:          http.NewServeMux(),
+		engine:       cfg.Engine,
+		sessions:     cfg.Sessions,
+		registry:     cfg.Registry,
+		store:        cfg.Store,
+		brainService: cfg.BrainService,
+		brainStore:   cfg.BrainStore,
+		secretBox:    cfg.SecretBox,
 	}
 	s.registerRoutes()
 	return s

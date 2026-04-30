@@ -38,9 +38,13 @@ func main() {
 
 	switch os.Args[1] {
 	case "serve":
-		cmdServe()
+		if err := cmdServe(); err != nil {
+			os.Exit(1) // cmdServe already logged the error
+		}
 	case "run":
-		cmdRun()
+		if err := cmdRun(); err != nil {
+			os.Exit(1) // cmdRun already logged the error
+		}
 	case "init":
 		cmdInit()
 	case "status":
@@ -56,7 +60,7 @@ func main() {
 	}
 }
 
-func cmdServe() {
+func cmdServe() error {
 	cfg, err := config.Load(configPath())
 	if err != nil {
 		slog.Error("failed to load config", "error", err)
@@ -182,8 +186,9 @@ func cmdServe() {
 
 	if err := srv.Run(ctx); err != nil {
 		slog.Error("server error", "error", err)
-		os.Exit(1)
+		return err
 	}
+	return nil
 }
 
 // runArchiveCleanup runs hourly and purges brain files whose deleted_at is
@@ -217,7 +222,7 @@ func runArchiveCleanup(ctx context.Context, svc *brain.Service) {
 	}
 }
 
-func cmdRun() {
+func cmdRun() error {
 	if len(os.Args) < 3 {
 		fmt.Fprintln(os.Stderr, "usage: forgebox run <prompt> [--provider NAME] [--model NAME]")
 		os.Exit(1)
@@ -271,10 +276,11 @@ func cmdRun() {
 	})
 	if err != nil {
 		slog.Error("task failed", "error", err)
-		os.Exit(1)
+		return err
 	}
 
 	fmt.Println(result.Output)
+	return nil
 }
 
 func cmdInit() {

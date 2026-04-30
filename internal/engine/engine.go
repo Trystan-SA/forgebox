@@ -130,10 +130,10 @@ func (e *Engine) Run(ctx context.Context, task *Task) (*Result, error) {
 
 	for i := 0; i < maxIterations; i++ {
 		req := &sdk.CompletionRequest{
-			Model:       task.Model,
-			Messages:    messages,
-			Tools:       toolDefs,
-			MaxTokens:   4096,
+			Model:        task.Model,
+			Messages:     messages,
+			Tools:        toolDefs,
+			MaxTokens:    4096,
 			SystemPrompt: buildSystemPrompt(),
 		}
 

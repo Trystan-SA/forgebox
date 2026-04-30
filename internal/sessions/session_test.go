@@ -52,7 +52,7 @@ func (m *mockSessionStore) UpdateSession(_ context.Context, s *sdk.SessionRecord
 func (m *mockSessionStore) ListSessions(_ context.Context, filter sdk.SessionFilter) ([]*sdk.SessionRecord, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	var out []*sdk.SessionRecord
+	out := make([]*sdk.SessionRecord, 0, len(m.sessions))
 	for _, s := range m.sessions {
 		if filter.UserID != "" && s.UserID != filter.UserID {
 			continue
@@ -75,7 +75,7 @@ func (m *mockSessionStore) AppendMessage(_ context.Context, sessionID string, ms
 func (m *mockSessionStore) GetTranscript(_ context.Context, sessionID string) ([]sdk.Message, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	var out []sdk.Message
+	out := make([]sdk.Message, 0, len(m.messages[sessionID]))
 	for _, msg := range m.messages[sessionID] {
 		out = append(out, *msg)
 	}

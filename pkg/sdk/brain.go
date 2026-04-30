@@ -33,7 +33,7 @@ type BrainFile struct {
 type BrainFileWithMeta struct {
 	BrainFile
 	Hashtags []string `json:"hashtags"`
-	Links    []string `json:"links"` // titles of linked files
+	Links    []string `json:"links"`           // titles of linked files
 	Score    float64  `json:"score,omitempty"` // relevance score from search
 }
 
@@ -45,11 +45,11 @@ type BrainLink struct {
 
 // BrainGraph is precomputed visualization data for a brain.
 type BrainGraph struct {
-	BrainID    string           `json:"brain_id"`
-	Clusters   []GraphCluster   `json:"clusters"`
-	Nodes      []GraphNode      `json:"nodes"`
-	Links      []BrainLink      `json:"links"`
-	ComputedAt time.Time        `json:"computed_at"`
+	BrainID    string         `json:"brain_id"`
+	Clusters   []GraphCluster `json:"clusters"`
+	Nodes      []GraphNode    `json:"nodes"`
+	Links      []BrainLink    `json:"links"`
+	ComputedAt time.Time      `json:"computed_at"`
 }
 
 // GraphCluster is a semantic cluster of brain files.
@@ -84,7 +84,7 @@ type DreamProposal struct {
 	ID         string              `json:"id"`
 	BrainID    string              `json:"brain_id"`
 	Snapshot   string              `json:"snapshot,omitempty"` // JSON blob
-	Changes    string              `json:"changes"`           // JSON array of DreamChange
+	Changes    string              `json:"changes"`            // JSON array of DreamChange
 	Summary    string              `json:"summary"`
 	Status     DreamProposalStatus `json:"status"`
 	CreatedAt  time.Time           `json:"created_at"`

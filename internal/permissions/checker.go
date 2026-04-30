@@ -46,7 +46,7 @@ func NewChecker(authCfg config.AuthConfig, store sdk.AuditStore) *Checker {
 
 // Check evaluates whether a user is allowed to invoke a tool.
 // Returns (allowed, reason).
-func (c *Checker) Check(userID string, toolName string, input json.RawMessage) (bool, string) {
+func (c *Checker) Check(userID, toolName string, input json.RawMessage) (bool, string) {
 	// Layer 1: Org policies (admin-defined).
 	if allowed, reason := c.checkOrgPolicies(userID, toolName); !allowed {
 		c.audit(userID, toolName, "deny", reason)
@@ -66,7 +66,7 @@ func (c *Checker) Check(userID string, toolName string, input json.RawMessage) (
 	return true, ""
 }
 
-func (c *Checker) checkOrgPolicies(userID string, toolName string) (bool, string) {
+func (c *Checker) checkOrgPolicies(userID, toolName string) (bool, string) {
 	for _, p := range c.orgPolicies {
 		if (p.Tool == "*" || p.Tool == toolName) && p.Action == "deny" {
 			return false, p.Reason
@@ -75,7 +75,7 @@ func (c *Checker) checkOrgPolicies(userID string, toolName string) (bool, string
 	return true, ""
 }
 
-func (c *Checker) checkRBAC(userID string, toolName string) (bool, string) {
+func (c *Checker) checkRBAC(userID, toolName string) (bool, string) {
 	// TODO: Look up user role from store and check against tool requirements.
 	// For now, allow all authenticated users.
 	if userID == "" || userID == "anonymous" {

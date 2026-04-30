@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/forgebox/forgebox/internal/agent"
 	atools "github.com/forgebox/forgebox/internal/agent/tools"
@@ -22,16 +21,21 @@ import (
 const (
 	// vsock port the agent listens on for host communication.
 	vsockPort = 10000
-
-	// CID 2 is always the host in Firecracker.
-	hostCID = 2
 )
 
 func main() {
 	slog.Info("fb-agent starting", "pid", os.Getpid())
 
+	// Create the listener before the context so os.Exit doesn't skip defer cancel().
+	listener, err := listenVsock(vsockPort)
+	if err != nil {
+		slog.Error("failed to listen on vsock", "port", vsockPort, "error", err)
+		os.Exit(1)
+	}
+
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+	defer func() { _ = listener.Close() }()
 
 	registry := atools.NewRegistry()
 	registry.Register(&atools.BashTool{})
@@ -46,13 +50,6 @@ func main() {
 		Tools:   registry,
 		Workdir: "/workspace",
 	})
-
-	listener, err := listenVsock(vsockPort)
-	if err != nil {
-		slog.Error("failed to listen on vsock", "port", vsockPort, "error", err)
-		os.Exit(1)
-	}
-	defer func() { _ = listener.Close() }()
 
 	slog.Info("fb-agent ready", "vsock_port", vsockPort)
 
@@ -87,19 +84,4 @@ func listenVsock(port int) (net.Listener, error) {
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	slog.Warn("vsock not available, falling back to TCP", "addr", addr)
 	return net.Listen("tcp", addr)
-}
-
-// heartbeat periodically reports liveness to the host.
-func heartbeat(ctx context.Context, interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			// Heartbeat is handled at the gRPC layer; this is a placeholder
-			// for custom health reporting.
-		}
-	}
 }

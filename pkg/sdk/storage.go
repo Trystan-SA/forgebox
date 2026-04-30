@@ -79,7 +79,7 @@ const (
 	TaskRunning   TaskStatus = "running"
 	TaskCompleted TaskStatus = "completed"
 	TaskFailed    TaskStatus = "failed"
-	TaskCancelled TaskStatus = "cancelled"
+	TaskCancelled TaskStatus = "canceled"
 )
 
 // TaskFilter specifies criteria for listing tasks.

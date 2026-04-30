@@ -64,18 +64,18 @@ func cmdServe() {
 		os.Exit(1)
 	}
 
-	if err := telemetry.Init(cfg.Telemetry); err != nil {
+	if cfg.Storage.DSN == "" {
+		slog.Error("storage DSN missing — set FORGEBOX_DATABASE_URL or storage.dsn in config")
+		os.Exit(1)
+	}
+
+	if err = telemetry.Init(cfg.Telemetry); err != nil {
 		slog.Warn("telemetry init failed, continuing without", "error", err)
 	}
 	defer telemetry.Shutdown()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-
-	if cfg.Storage.DSN == "" {
-		slog.Error("storage DSN missing — set FORGEBOX_DATABASE_URL or storage.dsn in config")
-		os.Exit(1)
-	}
 	store, err := postgres.New(cfg.Storage.DSN)
 	if err != nil {
 		slog.Error("failed to open storage", "error", err)
@@ -96,7 +96,7 @@ func cmdServe() {
 	}
 
 	registry := plugins.NewRegistry()
-	if err := registry.LoadBuiltins(cfg); err != nil {
+	if err = registry.LoadBuiltins(cfg); err != nil {
 		slog.Error("failed to load plugins", "error", err)
 		os.Exit(1)
 	}
@@ -106,7 +106,7 @@ func cmdServe() {
 		slog.Error("encryption key required for DB-backed providers", "error", err, "env", crypto.EnvKey)
 		os.Exit(1)
 	}
-	if err := registry.LoadFromStore(ctx, store, secretBox); err != nil {
+	if err = registry.LoadFromStore(ctx, store, secretBox); err != nil {
 		slog.Warn("failed to load DB-backed providers", "error", err)
 	}
 
@@ -227,13 +227,14 @@ func cmdRun() {
 		os.Exit(1)
 	}
 
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
-
 	if cfg.Storage.DSN == "" {
 		slog.Error("storage DSN missing — set FORGEBOX_DATABASE_URL or storage.dsn in config")
 		os.Exit(1)
 	}
+
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
 	store, err := postgres.New(cfg.Storage.DSN)
 	if err != nil {
 		slog.Error("failed to open storage", "error", err)
@@ -242,7 +243,7 @@ func cmdRun() {
 	defer func() { _ = store.Close() }()
 
 	registry := plugins.NewRegistry()
-	if err := registry.LoadBuiltins(cfg); err != nil {
+	if err = registry.LoadBuiltins(cfg); err != nil {
 		slog.Error("failed to load plugins", "error", err)
 		os.Exit(1)
 	}

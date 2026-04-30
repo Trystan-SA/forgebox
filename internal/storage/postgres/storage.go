@@ -65,7 +65,6 @@ func (s *Store) ListTasks(ctx context.Context, filter sdk.TaskFilter) ([]*sdk.Ta
 	if filter.Status != "" {
 		query += fmt.Sprintf(" AND status = $%d", i)
 		args = append(args, filter.Status)
-		i++
 	}
 	query += " ORDER BY created_at DESC"
 	if filter.Limit > 0 {
@@ -128,7 +127,6 @@ func (s *Store) ListSessions(ctx context.Context, filter sdk.SessionFilter) ([]*
 	if filter.UserID != "" {
 		query += fmt.Sprintf(" AND user_id = $%d", i)
 		args = append(args, filter.UserID)
-		i++
 	}
 	query += " ORDER BY updated_at DESC"
 	if filter.Limit > 0 {
@@ -195,6 +193,7 @@ func (s *Store) GetTranscript(ctx context.Context, sessionID string) ([]sdk.Mess
 
 // --- AuditStore ---
 
+// LogAuditEntry records an audit log entry.
 func (s *Store) LogAuditEntry(ctx context.Context, entry *sdk.AuditEntry) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO audit_log (id, timestamp, user_id, task_id, action, tool, decision, reason) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
@@ -204,6 +203,7 @@ func (s *Store) LogAuditEntry(ctx context.Context, entry *sdk.AuditEntry) error 
 	return err
 }
 
+// ListAuditEntries returns audit entries matching the given filter.
 func (s *Store) ListAuditEntries(ctx context.Context, filter sdk.AuditFilter) ([]*sdk.AuditEntry, error) {
 	query := `SELECT id, timestamp, user_id, task_id, action, tool, decision, reason FROM audit_log WHERE 1=1`
 	args := []any{}
@@ -216,7 +216,6 @@ func (s *Store) ListAuditEntries(ctx context.Context, filter sdk.AuditFilter) ([
 	if filter.TaskID != "" {
 		query += fmt.Sprintf(" AND task_id = $%d", i)
 		args = append(args, filter.TaskID)
-		i++
 	}
 	query += " ORDER BY timestamp DESC"
 	if filter.Limit > 0 {
@@ -242,6 +241,7 @@ func (s *Store) ListAuditEntries(ctx context.Context, filter sdk.AuditFilter) ([
 
 // --- UserStore ---
 
+// GetUser retrieves a user by ID.
 func (s *Store) GetUser(ctx context.Context, id string) (*sdk.UserRecord, error) {
 	row := s.db.QueryRowContext(ctx, `SELECT id, name, email, password_hash, role, disabled FROM users WHERE id = $1`, id)
 	var u sdk.UserRecord
@@ -251,6 +251,7 @@ func (s *Store) GetUser(ctx context.Context, id string) (*sdk.UserRecord, error)
 	return &u, nil
 }
 
+// GetUserByEmail retrieves a user by email address.
 func (s *Store) GetUserByEmail(ctx context.Context, email string) (*sdk.UserRecord, error) {
 	row := s.db.QueryRowContext(ctx, `SELECT id, name, email, password_hash, role, disabled FROM users WHERE email = $1`, email)
 	var u sdk.UserRecord
@@ -260,6 +261,7 @@ func (s *Store) GetUserByEmail(ctx context.Context, email string) (*sdk.UserReco
 	return &u, nil
 }
 
+// CreateUser persists a new user record.
 func (s *Store) CreateUser(ctx context.Context, user *sdk.UserRecord) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO users (id, name, email, password_hash, role, disabled) VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -268,6 +270,7 @@ func (s *Store) CreateUser(ctx context.Context, user *sdk.UserRecord) error {
 	return err
 }
 
+// ListUsers returns all users ordered by name.
 func (s *Store) ListUsers(ctx context.Context) ([]*sdk.UserRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id, name, email, password_hash, role, disabled FROM users ORDER BY name`)
 	if err != nil {
@@ -286,6 +289,7 @@ func (s *Store) ListUsers(ctx context.Context) ([]*sdk.UserRecord, error) {
 	return users, rows.Err()
 }
 
+// CountUsers returns the total number of user records.
 func (s *Store) CountUsers(ctx context.Context) (int, error) {
 	var count int
 	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&count)
@@ -294,6 +298,7 @@ func (s *Store) CountUsers(ctx context.Context) (int, error) {
 
 // --- AutomationStore ---
 
+// CreateAutomation persists a new automation record.
 func (s *Store) CreateAutomation(ctx context.Context, a *sdk.AutomationRecord) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO automations (id, name, description, created_by, sharing, team_id, trigger_config, nodes, edges, enabled, created_at, updated_at)
@@ -305,6 +310,7 @@ func (s *Store) CreateAutomation(ctx context.Context, a *sdk.AutomationRecord) e
 	return err
 }
 
+// GetAutomation retrieves an automation by ID.
 func (s *Store) GetAutomation(ctx context.Context, id string) (*sdk.AutomationRecord, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, name, description, created_by, sharing, team_id, trigger_config, nodes, edges, enabled, created_at, updated_at
@@ -312,6 +318,7 @@ func (s *Store) GetAutomation(ctx context.Context, id string) (*sdk.AutomationRe
 	return scanAutomation(row)
 }
 
+// UpdateAutomation updates a stored automation record.
 func (s *Store) UpdateAutomation(ctx context.Context, a *sdk.AutomationRecord) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE automations SET name=$1, description=$2, sharing=$3, team_id=$4, trigger_config=$5, nodes=$6, edges=$7, enabled=$8, updated_at=$9
@@ -323,6 +330,7 @@ func (s *Store) UpdateAutomation(ctx context.Context, a *sdk.AutomationRecord) e
 	return err
 }
 
+// DeleteAutomation removes an automation record.
 func (s *Store) DeleteAutomation(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM automations WHERE id = $1`, id)
 	return err
@@ -335,7 +343,6 @@ func (s *Store) ListAutomations(ctx context.Context, filter sdk.AutomationFilter
 	if filter.UserID != "" {
 		query += fmt.Sprintf(` AND (created_by = $%d OR sharing = 'org' OR (sharing = 'team' AND team_id IN (SELECT team_ids FROM users WHERE id = $%d)))`, i, i)
 		args = append(args, filter.UserID)
-		i++
 	}
 	query += " ORDER BY updated_at DESC"
 	if filter.Limit > 0 {
@@ -429,7 +436,6 @@ func (s *Store) ListApps(ctx context.Context, filter sdk.AppFilter) ([]*sdk.AppR
 	if filter.Status != "" {
 		query += fmt.Sprintf(" AND status = $%d", i)
 		args = append(args, filter.Status)
-		i++
 	}
 	query += " ORDER BY updated_at DESC"
 	if filter.Limit > 0 {

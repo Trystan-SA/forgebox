@@ -16,8 +16,10 @@ type fileWriteInput struct {
 	Content string `json:"content"`
 }
 
+// Name returns the tool identifier.
 func (t *FileWriteTool) Name() string { return "file_write" }
 
+// Execute creates or overwrites a file with the given content.
 func (t *FileWriteTool) Execute(ctx context.Context, input json.RawMessage) (*Result, error) {
 	var in fileWriteInput
 	if err := json.Unmarshal(input, &in); err != nil {

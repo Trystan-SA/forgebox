@@ -17,8 +17,10 @@ type bashInput struct {
 	Timeout int    `json:"timeout,omitempty"` // seconds
 }
 
+// Name returns the tool identifier.
 func (t *BashTool) Name() string { return "bash" }
 
+// Execute runs a shell command and returns its output.
 func (t *BashTool) Execute(ctx context.Context, input json.RawMessage) (*Result, error) {
 	var in bashInput
 	if err := json.Unmarshal(input, &in); err != nil {

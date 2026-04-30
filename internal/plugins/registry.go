@@ -103,7 +103,7 @@ func (r *Registry) registerStoredProvider(ctx context.Context, row *sdk.Provider
 		return fmt.Errorf("decrypt config: %w", err)
 	}
 	var cfg map[string]any
-	if err := json.Unmarshal(plain, &cfg); err != nil {
+	if err = json.Unmarshal(plain, &cfg); err != nil {
 		return fmt.Errorf("parse config: %w", err)
 	}
 	p, err := loadBuiltinProvider(row.Type, cfg)

@@ -20,7 +20,7 @@ linters:
     - misspell
     - nolintlint
     - bodyclose
-    - exportloopref
+    - copyloopvar
     - whitespace
     - prealloc
 

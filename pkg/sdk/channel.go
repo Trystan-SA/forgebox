@@ -11,7 +11,7 @@ type ChannelPlugin interface {
 	Plugin
 
 	// Listen starts listening for inbound messages on this channel.
-	// It blocks until ctx is cancelled. Received messages are dispatched
+	// It blocks until ctx is canceled. Received messages are dispatched
 	// to the handler.
 	Listen(ctx context.Context, handler MessageHandler) error
 

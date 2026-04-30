@@ -40,19 +40,19 @@ func Shutdown() {
 }
 
 // TraceVMBoot records a span for VM boot time.
-func TraceVMBoot(ctx context.Context, vmID string) (context.Context, func()) {
+func TraceVMBoot(ctx context.Context, vmID string) (traceCtx context.Context, end func()) {
 	// TODO: Start a span using otel.Tracer("forgebox.vm").Start(ctx, "vm.boot")
 	return ctx, func() {}
 }
 
 // TraceToolExec records a span for tool execution.
-func TraceToolExec(ctx context.Context, toolName string) (context.Context, func()) {
+func TraceToolExec(ctx context.Context, toolName string) (traceCtx context.Context, end func()) {
 	// TODO: Start a span using otel.Tracer("forgebox.tool").Start(ctx, "tool.exec")
 	return ctx, func() {}
 }
 
 // TraceProviderCall records a span for an LLM provider call.
-func TraceProviderCall(ctx context.Context, provider, model string) (context.Context, func()) {
+func TraceProviderCall(ctx context.Context, provider, model string) (traceCtx context.Context, end func()) {
 	// TODO: Start a span using otel.Tracer("forgebox.provider").Start(ctx, "provider.call")
 	return ctx, func() {}
 }

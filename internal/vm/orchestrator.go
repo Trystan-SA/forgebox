@@ -152,7 +152,7 @@ func (o *Orchestrator) Allocate(ctx context.Context, req *AllocRequest) (string,
 }
 
 // Execute runs a tool inside the specified VM (or locally in dev mode).
-func (o *Orchestrator) Execute(ctx context.Context, vmID string, toolName string, input json.RawMessage) (*ExecResult, error) {
+func (o *Orchestrator) Execute(ctx context.Context, vmID, toolName string, input json.RawMessage) (*ExecResult, error) {
 	o.mu.Lock()
 	vm, ok := o.active[vmID]
 	o.mu.Unlock()
@@ -230,7 +230,7 @@ func (o *Orchestrator) Shutdown(ctx context.Context) {
 }
 
 // Status returns pool and active VM counts.
-func (o *Orchestrator) Status() (poolSize int, activeCount int) {
+func (o *Orchestrator) Status() (poolSize, activeCount int) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	return len(o.pool), len(o.active)

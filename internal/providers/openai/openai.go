@@ -179,7 +179,7 @@ func (p *Provider) buildRequest(req *sdk.CompletionRequest) *openaiRequest {
 		msgs = append(msgs, openaiMsg{Role: m.Role, Content: content})
 	}
 
-	var tools []openaiTool
+	tools := make([]openaiTool, 0, len(req.Tools))
 	for _, t := range req.Tools {
 		tools = append(tools, openaiTool{
 			Type: "function",
@@ -205,7 +205,7 @@ func (p *Provider) convertResponse(resp *openaiResponse) *sdk.CompletionResponse
 	}
 
 	choice := resp.Choices[0]
-	var toolCalls []sdk.ToolCall
+	toolCalls := make([]sdk.ToolCall, 0, len(choice.Message.ToolCalls))
 	for _, tc := range choice.Message.ToolCalls {
 		toolCalls = append(toolCalls, sdk.ToolCall{
 			ID:    tc.ID,

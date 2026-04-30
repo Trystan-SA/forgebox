@@ -18,8 +18,10 @@ type fileReadInput struct {
 	Limit  int    `json:"limit,omitempty"`  // max lines to read
 }
 
+// Name returns the tool identifier.
 func (t *FileReadTool) Name() string { return "file_read" }
 
+// Execute reads a file and returns its content with line numbers.
 func (t *FileReadTool) Execute(ctx context.Context, input json.RawMessage) (*Result, error) {
 	var in fileReadInput
 	if err := json.Unmarshal(input, &in); err != nil {

@@ -74,7 +74,7 @@ func New(cfg Config) *Server {
 	return s
 }
 
-// Run starts the HTTP and gRPC servers. Blocks until ctx is cancelled.
+// Run starts the HTTP and gRPC servers. Blocks until ctx is canceled.
 func (s *Server) Run(ctx context.Context) error {
 	httpServer := &http.Server{
 		Addr:         s.cfg.ListenAddr,
@@ -287,7 +287,7 @@ func (s *Server) handleCancelTask(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	writeJSON(w, http.StatusOK, map[string]string{
 		"task_id": id,
-		"status":  "cancelled",
+		"status":  "canceled",
 	})
 }
 
@@ -382,7 +382,7 @@ func (s *Server) handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := probe.Init(r.Context(), req.Config); err != nil {
+	if err = probe.Init(r.Context(), req.Config); err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid provider config: %v", err))
 		return
 	}
@@ -872,7 +872,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		Password      string `json:"password"`
 		SetupPassword string `json:"setup_password"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err = json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}

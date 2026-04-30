@@ -13,13 +13,15 @@ import (
 type WebFetchTool struct{}
 
 type webFetchInput struct {
-	URL     string `json:"url"`
-	Method  string `json:"method,omitempty"`
+	URL     string            `json:"url"`
+	Method  string            `json:"method,omitempty"`
 	Headers map[string]string `json:"headers,omitempty"`
 }
 
+// Name returns the tool identifier.
 func (t *WebFetchTool) Name() string { return "web_fetch" }
 
+// Execute fetches the given URL and returns status + body.
 func (t *WebFetchTool) Execute(ctx context.Context, input json.RawMessage) (*Result, error) {
 	var in webFetchInput
 	if err := json.Unmarshal(input, &in); err != nil {
@@ -34,7 +36,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, input json.RawMessage) (*Res
 
 	client := &http.Client{Timeout: 30 * time.Second}
 
-	req, err := http.NewRequestWithContext(ctx, in.Method, in.URL, nil)
+	req, err := http.NewRequestWithContext(ctx, in.Method, in.URL, http.NoBody)
 	if err != nil {
 		return &Result{Content: fmt.Sprintf("invalid request: %s", err), IsError: true}, nil
 	}

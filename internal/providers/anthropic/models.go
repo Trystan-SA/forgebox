@@ -1,11 +1,11 @@
-// Package anthropic exposes the shared Anthropic model catalogue used by
+// Package anthropic exposes the shared Anthropic model catalog used by
 // both the anthropic-api and anthropic-subscription providers. The HTTP-level
 // shared code lives in the base/ subpackage.
 package anthropic
 
 import "github.com/forgebox/forgebox/pkg/sdk"
 
-// Models returns the Anthropic model catalogue. The same list is exposed by
+// Models returns the Anthropic model catalog. The same list is exposed by
 // the API-key and subscription providers; the subscription provider may
 // filter entries that aren't available on its plan.
 func Models() []sdk.Model {

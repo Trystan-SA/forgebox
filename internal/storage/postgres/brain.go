@@ -181,6 +181,7 @@ func (b *Store) ListFiles(ctx context.Context, brainID string) ([]*sdk.BrainFile
 	return files, rows.Err()
 }
 
+// SearchByEmbedding returns the nearest brain files to the given embedding vector.
 func (b *Store) SearchByEmbedding(ctx context.Context, brainID string, vec []float32, limit int) ([]*sdk.BrainFileWithMeta, error) {
 	v := pgvector.NewVector(vec)
 	rows, err := b.db.QueryContext(ctx,
@@ -209,6 +210,7 @@ func (b *Store) SearchByEmbedding(ctx context.Context, brainID string, vec []flo
 	return files, rows.Err()
 }
 
+// SetFileHashtags replaces all hashtags for a brain file atomically.
 func (b *Store) SetFileHashtags(ctx context.Context, fileID string, tags []string) error {
 	tx, err := b.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -230,6 +232,7 @@ func (b *Store) SetFileHashtags(ctx context.Context, fileID string, tags []strin
 	return tx.Commit()
 }
 
+// GetFileHashtags returns all hashtags for a brain file.
 func (b *Store) GetFileHashtags(ctx context.Context, fileID string) ([]string, error) {
 	rows, err := b.db.QueryContext(ctx, `SELECT tag FROM brain_hashtags WHERE file_id = $1 ORDER BY tag`, fileID)
 	if err != nil {
@@ -248,6 +251,7 @@ func (b *Store) GetFileHashtags(ctx context.Context, fileID string) ([]string, e
 	return tags, rows.Err()
 }
 
+// ListHashtags returns all distinct hashtags used across a brain's files.
 func (b *Store) ListHashtags(ctx context.Context, brainID string) ([]string, error) {
 	rows, err := b.db.QueryContext(ctx,
 		`SELECT DISTINCT h.tag FROM brain_hashtags h
@@ -271,6 +275,7 @@ func (b *Store) ListHashtags(ctx context.Context, brainID string) ([]string, err
 	return tags, rows.Err()
 }
 
+// SetFileLinks replaces all outbound links for a source file atomically.
 func (b *Store) SetFileLinks(ctx context.Context, sourceFileID string, targetFileIDs []string) error {
 	tx, err := b.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -292,6 +297,7 @@ func (b *Store) SetFileLinks(ctx context.Context, sourceFileID string, targetFil
 	return tx.Commit()
 }
 
+// GetFileLinks returns all active file links within a brain.
 func (b *Store) GetFileLinks(ctx context.Context, brainID string) ([]sdk.BrainLink, error) {
 	rows, err := b.db.QueryContext(ctx,
 		`SELECT l.source_file_id, l.target_file_id FROM brain_links l
@@ -315,6 +321,7 @@ func (b *Store) GetFileLinks(ctx context.Context, brainID string) ([]sdk.BrainLi
 	return links, rows.Err()
 }
 
+// SaveGraph upserts the precomputed graph for a brain.
 func (b *Store) SaveGraph(ctx context.Context, graph *sdk.BrainGraph) error {
 	clusters, err := json.Marshal(graph.Clusters)
 	if err != nil {
@@ -334,6 +341,7 @@ func (b *Store) SaveGraph(ctx context.Context, graph *sdk.BrainGraph) error {
 	return err
 }
 
+// GetGraph retrieves the precomputed graph for a brain.
 func (b *Store) GetGraph(ctx context.Context, brainID string) (*sdk.BrainGraph, error) {
 	var graph sdk.BrainGraph
 	var clustersJSON, nodesJSON string
@@ -344,10 +352,10 @@ func (b *Store) GetGraph(ctx context.Context, brainID string) (*sdk.BrainGraph, 
 		return nil, err
 	}
 
-	if err := json.Unmarshal([]byte(clustersJSON), &graph.Clusters); err != nil {
+	if err = json.Unmarshal([]byte(clustersJSON), &graph.Clusters); err != nil {
 		return nil, fmt.Errorf("unmarshal clusters: %w", err)
 	}
-	if err := json.Unmarshal([]byte(nodesJSON), &graph.Nodes); err != nil {
+	if err = json.Unmarshal([]byte(nodesJSON), &graph.Nodes); err != nil {
 		return nil, fmt.Errorf("unmarshal nodes: %w", err)
 	}
 
@@ -363,6 +371,7 @@ func (b *Store) GetGraph(ctx context.Context, brainID string) (*sdk.BrainGraph, 
 	return &graph, nil
 }
 
+// CreateDreamProposal persists a new dream proposal.
 func (b *Store) CreateDreamProposal(ctx context.Context, p *sdk.DreamProposal) error {
 	_, err := b.db.ExecContext(ctx,
 		`INSERT INTO dream_proposals (id, brain_id, snapshot, changes, summary, status, created_at)

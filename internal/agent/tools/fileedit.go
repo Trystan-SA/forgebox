@@ -17,8 +17,10 @@ type fileEditInput struct {
 	NewString string `json:"new_string"`
 }
 
+// Name returns the tool identifier.
 func (t *FileEditTool) Name() string { return "file_edit" }
 
+// Execute performs an exact string replacement in a file.
 func (t *FileEditTool) Execute(ctx context.Context, input json.RawMessage) (*Result, error) {
 	var in fileEditInput
 	if err := json.Unmarshal(input, &in); err != nil {

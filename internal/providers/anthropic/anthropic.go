@@ -147,12 +147,12 @@ func (p *Provider) Stream(ctx context.Context, req *sdk.CompletionRequest) (*sdk
 // --- Anthropic API types ---
 
 type anthropicRequest struct {
-	Model     string            `json:"model"`
-	Messages  []anthropicMsg    `json:"messages"`
-	System    string            `json:"system,omitempty"`
-	MaxTokens int               `json:"max_tokens"`
-	Tools     []anthropicTool   `json:"tools,omitempty"`
-	Stream    bool              `json:"stream,omitempty"`
+	Model     string          `json:"model"`
+	Messages  []anthropicMsg  `json:"messages"`
+	System    string          `json:"system,omitempty"`
+	MaxTokens int             `json:"max_tokens"`
+	Tools     []anthropicTool `json:"tools,omitempty"`
+	Stream    bool            `json:"stream,omitempty"`
 }
 
 type anthropicMsg struct {

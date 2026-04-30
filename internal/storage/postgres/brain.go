@@ -13,8 +13,10 @@ import (
 )
 
 // Verify Store implements BrainStore (and StoragePlugin via storage.go).
-var _ sdk.BrainStore = (*Store)(nil)
-var _ sdk.StoragePlugin = (*Store)(nil)
+var (
+	_ sdk.BrainStore    = (*Store)(nil)
+	_ sdk.StoragePlugin = (*Store)(nil)
+)
 
 // CreateBrain persists a new brain record.
 func (b *Store) CreateBrain(ctx context.Context, brain *sdk.BrainRecord) error {
@@ -381,6 +383,7 @@ func (b *Store) CreateDreamProposal(ctx context.Context, p *sdk.DreamProposal) e
 	return err
 }
 
+// GetDreamProposal retrieves a dream proposal by ID.
 func (b *Store) GetDreamProposal(ctx context.Context, proposalID string) (*sdk.DreamProposal, error) {
 	var p sdk.DreamProposal
 	err := b.db.QueryRowContext(ctx,
@@ -394,6 +397,7 @@ func (b *Store) GetDreamProposal(ctx context.Context, proposalID string) (*sdk.D
 	return &p, nil
 }
 
+// ListDreamProposals returns all proposals for a brain, newest first.
 func (b *Store) ListDreamProposals(ctx context.Context, brainID string) ([]*sdk.DreamProposal, error) {
 	rows, err := b.db.QueryContext(ctx,
 		`SELECT id, brain_id, summary, status, created_at, resolved_at, resolved_by
@@ -416,6 +420,7 @@ func (b *Store) ListDreamProposals(ctx context.Context, brainID string) ([]*sdk.
 	return proposals, rows.Err()
 }
 
+// UpdateDreamProposalStatus sets the status and resolution metadata of a proposal.
 func (b *Store) UpdateDreamProposalStatus(ctx context.Context, proposalID string, status sdk.DreamProposalStatus, resolvedBy string) error {
 	now := time.Now()
 	_, err := b.db.ExecContext(ctx,

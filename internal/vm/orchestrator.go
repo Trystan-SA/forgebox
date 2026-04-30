@@ -31,19 +31,20 @@ type Orchestrator struct {
 // VM represents a running Firecracker microVM.
 type VM struct {
 	ID        string
-	Status    VMStatus
+	Status    Status
 	Config    AllocRequest
 	BootedAt  time.Time
 	AgentAddr string
 }
 
-// VMStatus tracks the lifecycle state of a VM.
-type VMStatus string
+// Status tracks the lifecycle state of a VM.
+type Status string
 
+// VM status constants.
 const (
-	VMReady    VMStatus = "ready"
-	VMRunning  VMStatus = "running"
-	VMStopping VMStatus = "stopping"
+	VMReady    Status = "ready"
+	VMRunning  Status = "running"
+	VMStopping Status = "stopping"
 )
 
 // AllocRequest configures a new VM allocation.

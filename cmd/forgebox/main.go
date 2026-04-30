@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-
 	"time"
 
 	"github.com/forgebox/forgebox/internal/brain"
@@ -69,30 +68,12 @@ func cmdServe() {
 		os.Exit(1)
 	}
 
-	if err = telemetry.Init(cfg.Telemetry); err != nil {
-		slog.Warn("telemetry init failed, continuing without", "error", err)
-	}
-	defer telemetry.Shutdown()
-
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
+	// All os.Exit-on-fail initializations must complete before any defer so that
+	// deferred cleanups are not skipped by os.Exit.
 	store, err := postgres.New(cfg.Storage.DSN)
 	if err != nil {
 		slog.Error("failed to open storage", "error", err)
 		os.Exit(1)
-	}
-	defer func() { _ = store.Close() }()
-
-	// Check if this is a fresh install with no users.
-	userCount, err := store.CountUsers(ctx)
-	if err != nil {
-		slog.Warn("failed to count users", "error", err)
-	} else if userCount == 0 {
-		if os.Getenv("FORGEBOX_FIRST_PASSWORD") != "" {
-			slog.Info("no users found — POST /api/v1/setup to create the first admin account")
-		} else {
-			slog.Warn("no users found and FORGEBOX_FIRST_PASSWORD is not set — set it to enable first-time setup")
-		}
 	}
 
 	registry := plugins.NewRegistry()
@@ -106,6 +87,35 @@ func cmdServe() {
 		slog.Error("encryption key required for DB-backed providers", "error", err, "env", crypto.EnvKey)
 		os.Exit(1)
 	}
+
+	orch, err := vm.NewOrchestrator(cfg.VM)
+	if err != nil {
+		slog.Error("failed to init VM orchestrator", "error", err)
+		os.Exit(1)
+	}
+
+	if err = telemetry.Init(cfg.Telemetry); err != nil {
+		slog.Warn("telemetry init failed, continuing without", "error", err)
+	}
+	defer telemetry.Shutdown()
+	defer func() { _ = store.Close() }()
+
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+	defer orch.Shutdown(ctx)
+
+	// Check if this is a fresh install with no users.
+	userCount, err := store.CountUsers(ctx)
+	if err != nil {
+		slog.Warn("failed to count users", "error", err)
+	} else if userCount == 0 {
+		if os.Getenv("FORGEBOX_FIRST_PASSWORD") != "" {
+			slog.Info("no users found — POST /api/v1/setup to create the first admin account")
+		} else {
+			slog.Warn("no users found and FORGEBOX_FIRST_PASSWORD is not set — set it to enable first-time setup")
+		}
+	}
+
 	if err = registry.LoadFromStore(ctx, store, secretBox); err != nil {
 		slog.Warn("failed to load DB-backed providers", "error", err)
 	}
@@ -142,21 +152,14 @@ func cmdServe() {
 
 	go runArchiveCleanup(ctx, brainSvc)
 
-	orch, err := vm.NewOrchestrator(cfg.VM)
-	if err != nil {
-		slog.Error("failed to init VM orchestrator", "error", err)
-		os.Exit(1)
-	}
-	defer orch.Shutdown(ctx)
-
 	sessionMgr := sessions.NewManager(store)
 	permChecker := permissions.NewChecker(cfg.Auth, store)
 
 	eng := engine.New(engine.Config{
-		Registry:    registry,
+		Registry:     registry,
 		Orchestrator: orch,
-		Permissions: permChecker,
-		Sessions:    sessionMgr,
+		Permissions:  permChecker,
+		Sessions:     sessionMgr,
 	})
 
 	srv := gateway.New(gateway.Config{
@@ -232,15 +235,11 @@ func cmdRun() {
 		os.Exit(1)
 	}
 
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
-
 	store, err := postgres.New(cfg.Storage.DSN)
 	if err != nil {
 		slog.Error("failed to open storage", "error", err)
 		os.Exit(1)
 	}
-	defer func() { _ = store.Close() }()
 
 	registry := plugins.NewRegistry()
 	if err = registry.LoadBuiltins(cfg); err != nil {
@@ -253,6 +252,10 @@ func cmdRun() {
 		slog.Error("failed to init VM orchestrator", "error", err)
 		os.Exit(1)
 	}
+
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+	defer func() { _ = store.Close() }()
 	defer orch.Shutdown(ctx)
 
 	eng := engine.New(engine.Config{

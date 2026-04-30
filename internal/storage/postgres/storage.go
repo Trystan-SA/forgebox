@@ -336,6 +336,7 @@ func (s *Store) DeleteAutomation(ctx context.Context, id string) error {
 	return err
 }
 
+// ListAutomations returns automations matching the given filter.
 func (s *Store) ListAutomations(ctx context.Context, filter sdk.AutomationFilter) ([]*sdk.AutomationRecord, error) {
 	query := `SELECT id, name, description, created_by, sharing, team_id, trigger_config, nodes, edges, enabled, created_at, updated_at FROM automations WHERE 1=1`
 	args := []any{}
@@ -390,6 +391,7 @@ func scanAutomationRow(rows *sql.Rows) (*sdk.AutomationRecord, error) {
 
 // --- AppStore ---
 
+// CreateApp persists a new app record.
 func (s *Store) CreateApp(ctx context.Context, app *sdk.AppRecord) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO apps (id, name, description, created_by, sharing, team_id, status, tools, config, url, enabled, created_at, updated_at)
@@ -401,6 +403,7 @@ func (s *Store) CreateApp(ctx context.Context, app *sdk.AppRecord) error {
 	return err
 }
 
+// GetApp retrieves an app by ID.
 func (s *Store) GetApp(ctx context.Context, id string) (*sdk.AppRecord, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, name, description, created_by, sharing, team_id, status, tools, config, url, enabled, created_at, updated_at
@@ -408,6 +411,7 @@ func (s *Store) GetApp(ctx context.Context, id string) (*sdk.AppRecord, error) {
 	return scanApp(row)
 }
 
+// UpdateApp replaces the mutable fields of an existing app record.
 func (s *Store) UpdateApp(ctx context.Context, app *sdk.AppRecord) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE apps SET name=$1, description=$2, sharing=$3, team_id=$4, status=$5, tools=$6, config=$7, url=$8, enabled=$9, updated_at=$10
@@ -419,11 +423,13 @@ func (s *Store) UpdateApp(ctx context.Context, app *sdk.AppRecord) error {
 	return err
 }
 
+// DeleteApp removes an app record by ID.
 func (s *Store) DeleteApp(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM apps WHERE id = $1`, id)
 	return err
 }
 
+// ListApps returns apps matching the given filter.
 func (s *Store) ListApps(ctx context.Context, filter sdk.AppFilter) ([]*sdk.AppRecord, error) {
 	query := `SELECT id, name, description, created_by, sharing, team_id, status, tools, config, url, enabled, created_at, updated_at FROM apps WHERE 1=1`
 	args := []any{}
@@ -483,6 +489,7 @@ func scanAppRow(rows *sql.Rows) (*sdk.AppRecord, error) {
 
 // --- ProviderStore ---
 
+// CreateProvider persists a new encrypted provider record.
 func (s *Store) CreateProvider(ctx context.Context, p *sdk.ProviderRecord) error {
 	if p.ID == "" {
 		p.ID = uuid.NewString()
@@ -502,6 +509,7 @@ func (s *Store) CreateProvider(ctx context.Context, p *sdk.ProviderRecord) error
 	return err
 }
 
+// GetProvider retrieves a provider record by ID.
 func (s *Store) GetProvider(ctx context.Context, id string) (*sdk.ProviderRecord, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, type, name, config_encrypted, created_at, updated_at FROM providers WHERE id = $1`, id)
@@ -512,6 +520,7 @@ func (s *Store) GetProvider(ctx context.Context, id string) (*sdk.ProviderRecord
 	return &p, nil
 }
 
+// UpdateProvider replaces the mutable fields of an existing provider record.
 func (s *Store) UpdateProvider(ctx context.Context, p *sdk.ProviderRecord) error {
 	p.UpdatedAt = time.Now().UTC()
 	_, err := s.db.ExecContext(ctx,
@@ -521,11 +530,13 @@ func (s *Store) UpdateProvider(ctx context.Context, p *sdk.ProviderRecord) error
 	return err
 }
 
+// DeleteProvider removes a provider record by ID.
 func (s *Store) DeleteProvider(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM providers WHERE id = $1`, id)
 	return err
 }
 
+// ListProviders returns all provider records ordered by creation time.
 func (s *Store) ListProviders(ctx context.Context) ([]*sdk.ProviderRecord, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, type, name, config_encrypted, created_at, updated_at FROM providers ORDER BY created_at ASC`)

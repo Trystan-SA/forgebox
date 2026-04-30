@@ -33,9 +33,9 @@ func (s *Service) ComputeGraph(ctx context.Context, brainID string) (*sdk.BrainG
 	}
 
 	var (
-		embFiles    []*sdk.BrainFile
-		embeddings  [][]float32
-		noEmbFiles  []*sdk.BrainFile
+		embFiles   []*sdk.BrainFile
+		embeddings [][]float32
+		noEmbFiles []*sdk.BrainFile
 	)
 	for _, f := range files {
 		if len(f.Embedding) > 0 {
@@ -167,4 +167,3 @@ func topTag(freq map[string]int) string {
 	}
 	return best
 }
-

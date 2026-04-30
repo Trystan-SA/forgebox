@@ -183,7 +183,6 @@ func (s *Store) migrate() error {
 
 		// --- Brain tables ---
 
-
 		`CREATE TABLE IF NOT EXISTS brains (
 			id TEXT PRIMARY KEY,
 			automation_id TEXT NOT NULL UNIQUE,

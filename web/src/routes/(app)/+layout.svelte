@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { onMount } from 'svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import Toasts from '$lib/components/Toasts.svelte';
-	import { listProviders } from '$lib/api/client';
+	import { providersStore, loadProviders } from '$lib/stores/providers.svelte';
 	import type { Snippet } from 'svelte';
 
 	interface Props {
@@ -20,21 +21,17 @@
 		/^\/agents\/[^/]+\/brain$/.test(page.url.pathname)
 	);
 	let sidebarCollapsed = $state(false);
-	let hasProviders = $state(true);
+	const hasProviders = $derived(!providersStore.loaded || providersStore.providers.length > 0);
 
 	$effect(() => {
 		if (isFullscreen) sidebarCollapsed = true;
 	});
 
-	$effect(() => {
-		page.url.pathname;
-		listProviders()
-			.then((providers) => {
-				hasProviders = providers.length > 0;
-			})
-			.catch(() => {
-				hasProviders = true;
-			});
+	onMount(() => {
+		loadProviders().catch(() => {
+			// Treat fetch failure as "providers configured" so we don't show a
+			// misleading warning indicator on transient API errors.
+		});
 	});
 
 	const navGroups = $derived([

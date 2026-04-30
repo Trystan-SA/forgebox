@@ -2,8 +2,8 @@
 	import { goto } from '$app/navigation';
 	import { pushToast } from '$lib/stores/toasts.svelte';
 	import { createProvider } from '$lib/api/client';
-
-	type ProviderType = 'anthropic' | 'anthropic-subscription' | 'openai' | 'ollama';
+	import { refreshProviders } from '$lib/stores/providers.svelte';
+	import type { ProviderType } from '$lib/api/types';
 
 	type ProviderOption = {
 		value: ProviderType;
@@ -11,21 +11,17 @@
 		placeholder: string;
 		credentialLabel: string;
 		credentialField: 'api_key' | 'token' | null;
-		credentialPrefix?: string;
-		prefixError?: string;
 		hint?: string;
 		showBaseUrl: boolean;
 	};
 
 	const providerOptions: ProviderOption[] = [
 		{
-			value: 'anthropic',
+			value: 'anthropic-api',
 			label: 'Anthropic',
 			placeholder: 'sk-ant-api-...',
 			credentialLabel: 'API Key',
 			credentialField: 'api_key',
-			credentialPrefix: 'sk-ant-api-',
-			prefixError: 'API keys start with sk-ant-api-. For Claude Max, choose "Claude Subscription".',
 			showBaseUrl: false
 		},
 		{
@@ -34,8 +30,6 @@
 			placeholder: 'sk-ant-oat01-...',
 			credentialLabel: 'OAuth Setup Token',
 			credentialField: 'token',
-			credentialPrefix: 'sk-ant-oat',
-			prefixError: 'Setup tokens start with sk-ant-oat. Run `claude setup-token` to generate one.',
 			hint: 'Generate a token by running `claude setup-token` with the official Claude CLI while logged into your Claude Max account.',
 			showBaseUrl: false
 		},
@@ -57,22 +51,16 @@
 		}
 	];
 
-	let type = $state<ProviderType>('anthropic');
+	let type = $state<ProviderType>('anthropic-api');
 	let name = $state('');
 	let apiKey = $state('');
 	let baseUrl = $state('');
 	let saving = $state(false);
 
 	const selected = $derived(providerOptions.find((p) => p.value === type)!);
-	const credentialError = $derived.by(() => {
-		const trimmed = apiKey.trim();
-		if (!trimmed || !selected.credentialPrefix) return '';
-		return trimmed.startsWith(selected.credentialPrefix) ? '' : (selected.prefixError ?? '');
-	});
 	const canSave = $derived(
 		name.trim().length > 0 &&
 			(selected.credentialField === null || apiKey.trim().length > 0) &&
-			!credentialError &&
 			!saving
 	);
 
@@ -93,6 +81,7 @@
 				name: name.trim(),
 				config
 			});
+			await refreshProviders();
 			pushToast('Provider added', 'success');
 			goto('/providers');
 		} catch (err) {
@@ -149,7 +138,6 @@
 					<span class="fld__lbl">{selected.credentialLabel}</span>
 					<input
 						class="fld__input"
-						class:fld__input--error={credentialError}
 						type="password"
 						bind:value={apiKey}
 						placeholder={selected.placeholder}
@@ -157,9 +145,7 @@
 						disabled={saving}
 						autocomplete="off"
 					/>
-					{#if credentialError}
-						<span class="fld__err">{credentialError}</span>
-					{:else if selected.hint}
+					{#if selected.hint}
 						<span class="fld__hint">{selected.hint}</span>
 					{/if}
 				</label>
@@ -316,26 +302,11 @@
 			font-size: $text-sm;
 			padding: 7px $space-3;
 			border-radius: $radius-md;
-
-			&--error {
-				border-color: $error-500;
-
-				&:focus {
-					border-color: $error-500;
-					box-shadow: 0 0 0 3px rgba($error-500, 0.15);
-				}
-			}
 		}
 
 		&__hint {
 			font-size: 11px;
 			color: $neutral-500;
-			line-height: 1.4;
-		}
-
-		&__err {
-			font-size: 11px;
-			color: $error-700;
 			line-height: 1.4;
 		}
 	}

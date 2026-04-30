@@ -1,6 +1,7 @@
 package anthropicsubscription
 
 import (
+	"bytes"
 	"encoding/json"
 	"log/slog"
 	"strings"
@@ -26,23 +27,23 @@ func stripContext1MBeta(rq *base.Request) {
 	if cur == "" || !strings.Contains(cur, base.BetaContext1M) {
 		return
 	}
-	parts := strings.Split(cur, ",")
-	out := parts[:0]
-	for _, p := range parts {
-		if strings.TrimSpace(p) == base.BetaContext1M {
-			continue
-		}
-		out = append(out, p)
-	}
-	rq.Extras["anthropic-beta"] = strings.Join(out, ",")
+	rq.Extras["anthropic-beta"] = base.RemoveBetas(cur, base.BetaContext1M)
 	slog.Warn("subscription auth does not support 1M context; falling back to 200K")
 }
+
+var cacheControlMarker = []byte("cache_control")
 
 func stripCacheControl(rq *base.Request) {
 	stripped := false
 	for i, msg := range rq.Messages {
+		// Most messages won't carry cache_control; skip the unmarshal+marshal
+		// round-trip unless the marker is present in the raw bytes.
+		if !bytes.Contains(msg.Content, cacheControlMarker) {
+			continue
+		}
 		var arr []map[string]any
 		if err := json.Unmarshal(msg.Content, &arr); err != nil {
+			slog.Warn("subscription gate: unparseable message content; leaving as-is", "error", err)
 			continue
 		}
 		modified := false
@@ -57,6 +58,7 @@ func stripCacheControl(rq *base.Request) {
 		}
 		newContent, err := json.Marshal(arr)
 		if err != nil {
+			slog.Warn("subscription gate: failed to re-marshal stripped content", "error", err)
 			continue
 		}
 		rq.Messages[i].Content = newContent

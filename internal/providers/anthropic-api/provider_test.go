@@ -15,7 +15,7 @@ func TestInit_Validates(t *testing.T) {
 	}{
 		{"missing key", map[string]any{}, "api_key"},
 		{"empty key", map[string]any{"api_key": ""}, "api_key"},
-		{"oauth token rejected", map[string]any{"api_key": "sk-ant-oat01-abc"}, "subscription"},
+		{"oauth token rejected", map[string]any{"api_key": "sk-ant-oat01-abc"}, "anthropic-subscription"},
 		{"valid key", map[string]any{"api_key": "sk-ant-api-abc"}, ""},
 	}
 	for _, tc := range cases {
@@ -35,6 +35,6 @@ func TestInit_Validates(t *testing.T) {
 func TestNameAndModels(t *testing.T) {
 	p := New()
 	require.NoError(t, p.Init(context.Background(), map[string]any{"api_key": "sk-ant-api-abc"}))
-	require.Equal(t, "anthropic", p.Name())
+	require.Equal(t, "anthropic-api", p.Name())
 	require.NotEmpty(t, p.Models())
 }

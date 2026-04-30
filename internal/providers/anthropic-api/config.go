@@ -40,7 +40,7 @@ func fromMap(ctx context.Context, raw map[string]any) (*Config, error) {
 
 	if !strings.HasPrefix(cfg.APIKey, "sk-ant-api-") {
 		if strings.HasPrefix(cfg.APIKey, "sk-ant-oat") {
-			return nil, fmt.Errorf("api_key looks like a subscription token; use the anthropic-subscription provider")
+			return nil, fmt.Errorf("this looks like an anthropic-subscription OAuth token; use the anthropic-subscription provider instead")
 		}
 		return nil, fmt.Errorf("api_key must start with sk-ant-api-")
 	}

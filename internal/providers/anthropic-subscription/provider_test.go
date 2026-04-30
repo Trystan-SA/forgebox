@@ -14,7 +14,7 @@ func TestInit_Validates(t *testing.T) {
 		wantErr string
 	}{
 		{"missing token", map[string]any{}, "token"},
-		{"api key rejected", map[string]any{"token": "sk-ant-api-abc"}, "anthropic provider"},
+		{"api key rejected", map[string]any{"token": "sk-ant-api-abc"}, "anthropic-api provider"},
 		{"valid token", map[string]any{"token": "sk-ant-oat01-" + repeat('x', 80)}, ""},
 	}
 	for _, tc := range cases {

@@ -13,6 +13,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"time"
 
 	_ "github.com/lib/pq"
 )
@@ -29,6 +30,12 @@ func New(dsn string) (*Store, error) {
 		return nil, fmt.Errorf("open postgres: %w", err)
 	}
 
+	// Bound the pool — lib/pq's default is unlimited, which lets a burst of
+	// concurrent gateway requests open arbitrary numbers of connections.
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(30 * time.Minute)
+
 	if err := db.Ping(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("ping postgres: %w", err)
@@ -44,11 +51,10 @@ func New(dsn string) (*Store, error) {
 	return s, nil
 }
 
-// Plugin interface stubs.
-func (s *Store) Name() string                                    { return "postgres" }
-func (s *Store) Version() string                                 { return "1.0.0" }
+func (s *Store) Name() string                                   { return "postgres" }
+func (s *Store) Version() string                                { return "1.0.0" }
 func (s *Store) Init(_ context.Context, _ map[string]any) error { return nil }
-func (s *Store) Shutdown(_ context.Context) error                { return s.Close() }
+func (s *Store) Shutdown(_ context.Context) error               { return s.Close() }
 
 // Close closes the database connection pool.
 func (s *Store) Close() error {

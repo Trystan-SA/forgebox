@@ -49,3 +49,25 @@ func MergeBetaHeader(existing string, add []string) string {
 	}
 	return strings.Join(out, ", ")
 }
+
+// RemoveBetas returns a comma-separated header value with the given beta
+// values stripped (after trim). Whitespace and blanks are normalised the same
+// way as MergeBetaHeader.
+func RemoveBetas(existing string, drop ...string) string {
+	dropSet := make(map[string]struct{}, len(drop))
+	for _, d := range drop {
+		dropSet[d] = struct{}{}
+	}
+	var out []string
+	for _, v := range strings.Split(existing, ",") {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if _, skip := dropSet[v]; skip {
+			continue
+		}
+		out = append(out, v)
+	}
+	return strings.Join(out, ", ")
+}

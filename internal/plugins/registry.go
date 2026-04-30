@@ -235,34 +235,29 @@ func (r *Registry) Shutdown(ctx context.Context) {
 	}
 }
 
-// SupportedProviderTypes returns the set of factory keys that loadBuiltinProvider
-// understands. Used by the gateway to validate POST /providers requests early.
-func SupportedProviderTypes() []string {
-	return []string{"anthropic", "anthropic-api", "anthropic-subscription", "openai", "ollama"}
+// providerFactories maps a provider type key to a constructor returning an
+// unconfigured plugin. Used both for built-in loading and for validating
+// user-submitted POST /providers requests.
+var providerFactories = map[string]func() sdk.ProviderPlugin{
+	"anthropic":              func() sdk.ProviderPlugin { return anthropic.New() },
+	"anthropic-api":          func() sdk.ProviderPlugin { return anthropicapi.New() },
+	"anthropic-subscription": func() sdk.ProviderPlugin { return anthropicsubscription.New() },
+	"openai":                 func() sdk.ProviderPlugin { return openai.New() },
+	"ollama":                 func() sdk.ProviderPlugin { return ollama.New() },
 }
 
 // NewProvider returns an unconfigured provider instance for the given type
 // key. The caller is responsible for Init.
 func NewProvider(typ string) (sdk.ProviderPlugin, error) {
-	return loadBuiltinProvider(typ, nil)
+	factory, ok := providerFactories[typ]
+	if !ok {
+		return nil, fmt.Errorf("unknown built-in provider %q", typ)
+	}
+	return factory(), nil
 }
 
-// loadBuiltinProvider creates a provider plugin instance by type key.
-func loadBuiltinProvider(name string, cfg map[string]any) (sdk.ProviderPlugin, error) {
-	switch name {
-	case "anthropic":
-		return anthropic.New(), nil
-	case "anthropic-api":
-		return anthropicapi.New(), nil
-	case "anthropic-subscription":
-		return anthropicsubscription.New(), nil
-	case "openai":
-		return openai.New(), nil
-	case "ollama":
-		return ollama.New(), nil
-	default:
-		return nil, fmt.Errorf("unknown built-in provider %q", name)
-	}
+func loadBuiltinProvider(name string, _ map[string]any) (sdk.ProviderPlugin, error) {
+	return NewProvider(name)
 }
 
 // registerBuiltinTools registers the host-side tool definitions.

@@ -1,18 +1,20 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { listProviders, deleteProvider } from '$lib/api/client';
+	import { deleteProvider } from '$lib/api/client';
 	import type { Provider } from '$lib/api/types';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import { pushToast } from '$lib/stores/toasts.svelte';
+	import { providersStore, refreshProviders } from '$lib/stores/providers.svelte';
 
-	let providers = $state<Provider[]>([]);
-	let loading = $state(true);
+	let loading = $state(!providersStore.loaded);
 	let error = $state<string | null>(null);
 	let deleting = $state<string | null>(null);
 
+	const providers = $derived(providersStore.providers);
+
 	onMount(async () => {
 		try {
-			providers = await listProviders();
+			await refreshProviders();
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to load';
 		} finally {
@@ -26,7 +28,7 @@
 		deleting = p.id;
 		try {
 			await deleteProvider(p.id);
-			providers = providers.filter((x) => x.id !== p.id);
+			await refreshProviders();
 			pushToast('Provider removed', 'success');
 		} catch (err) {
 			pushToast(err instanceof Error ? err.message : 'Failed to remove', 'error', 5000);

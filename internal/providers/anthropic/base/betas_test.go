@@ -34,3 +34,31 @@ func TestMergeBetaHeader(t *testing.T) {
 		})
 	}
 }
+
+func TestRemoveBetas(t *testing.T) {
+	cases := []struct {
+		name     string
+		existing string
+		drop     []string
+		want     []string
+	}{
+		{"empty", "", []string{"a"}, nil},
+		{"no match", "a, b", []string{"c"}, []string{"a", "b"}},
+		{"single match", "a, b, c", []string{"b"}, []string{"a", "c"}},
+		{"trim and dedup-like", " a , b , a ", []string{"a"}, []string{"b"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := RemoveBetas(tc.existing, tc.drop...)
+			if got == "" {
+				require.Empty(t, tc.want)
+				return
+			}
+			gotParts := strings.Split(got, ",")
+			for i := range gotParts {
+				gotParts[i] = strings.TrimSpace(gotParts[i])
+			}
+			require.Equal(t, tc.want, gotParts)
+		})
+	}
+}

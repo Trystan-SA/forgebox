@@ -8,22 +8,20 @@ import (
 	"github.com/forgebox/forgebox/pkg/sdk/llmbase/auth"
 )
 
-// Config is the YAML-decoded configuration for the anthropic-subscription provider.
 type Config struct {
 	Token     string `yaml:"token"`
-	BaseURL   string `yaml:"base_url"`
 	TimeoutMS int    `yaml:"timeout_ms"`
 }
 
-// fromMap decodes a generic config map (the shape passed by the registry).
-// Token is resolved via secret-ref before being returned.
+// OAuth/subscription auth is bound to api.anthropic.com; base_url is rejected
+// to fail loudly rather than silently produce 401s against a custom endpoint.
 func fromMap(ctx context.Context, raw map[string]any) (*Config, error) {
 	cfg := &Config{}
 	if v, ok := raw["token"].(string); ok {
 		cfg.Token = v
 	}
-	if v, ok := raw["base_url"].(string); ok {
-		cfg.BaseURL = v
+	if v, ok := raw["base_url"].(string); ok && v != "" {
+		return nil, fmt.Errorf("base_url is not supported for anthropic-subscription (OAuth is bound to api.anthropic.com)")
 	}
 	if v, ok := raw["timeout_ms"].(int); ok {
 		cfg.TimeoutMS = v
@@ -40,7 +38,7 @@ func fromMap(ctx context.Context, raw map[string]any) (*Config, error) {
 
 	if !strings.HasPrefix(cfg.Token, "sk-ant-oat") {
 		if strings.HasPrefix(cfg.Token, "sk-ant-api-") {
-			return nil, fmt.Errorf("token looks like an API key; use the anthropic provider")
+			return nil, fmt.Errorf("this looks like an anthropic-api key; use the anthropic-api provider instead")
 		}
 		return nil, fmt.Errorf("token must start with sk-ant-oat")
 	}

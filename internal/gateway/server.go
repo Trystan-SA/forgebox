@@ -446,15 +446,9 @@ func (s *Server) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 }
 
 // loadProviderProbe constructs an unconfigured plugin matching the registry
-// factory. It mirrors the registry's switch but is reachable from the handler
-// without exporting registry internals.
+// factory so the handler can validate config without exposing registry internals.
 func loadProviderProbe(name string) (sdk.ProviderPlugin, error) {
-	for _, t := range plugins.SupportedProviderTypes() {
-		if t == name {
-			return plugins.NewProvider(name)
-		}
-	}
-	return nil, fmt.Errorf("unsupported provider type %q", name)
+	return plugins.NewProvider(name)
 }
 
 func (s *Server) handleListTools(w http.ResponseWriter, r *http.Request) {

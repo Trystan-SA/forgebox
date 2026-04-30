@@ -11,21 +11,15 @@ import (
 	"github.com/forgebox/forgebox/pkg/sdk/llmbase/auth"
 )
 
-// Provider is the anthropic provider (sdk.ProviderPlugin).
 type Provider struct {
 	*base.Provider
 }
 
-// New returns an unconfigured Provider; call Init before use.
 func New() *Provider { return &Provider{} }
 
-// Name implements sdk.Plugin.
-func (p *Provider) Name() string { return "anthropic" }
-
-// Version implements sdk.Plugin.
+func (p *Provider) Name() string    { return "anthropic-api" }
 func (p *Provider) Version() string { return "1.0.0" }
 
-// Init validates and loads configuration.
 func (p *Provider) Init(ctx context.Context, raw map[string]any) error {
 	cfg, err := fromMap(ctx, raw)
 	if err != nil {
@@ -41,8 +35,6 @@ func (p *Provider) Init(ctx context.Context, raw map[string]any) error {
 	return nil
 }
 
-// Shutdown implements sdk.Plugin.
 func (p *Provider) Shutdown(_ context.Context) error { return nil }
 
-// Models implements sdk.ProviderPlugin.
 func (p *Provider) Models() []sdk.Model { return anthropic.Models() }

@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { goto } from '$app/navigation';
-	import type { AgentRole, Agent } from '$lib/api/types';
+	import type { AgentRole, Provider } from '$lib/api/types';
+	import { getAgent, updateAgent, listProviders } from '$lib/api/client';
 	import { listBrainFiles } from '$lib/api/brain';
+	import ModelSelector from '$lib/components/ModelSelector.svelte';
 
 	let agentId = $derived(page.params.id!);
 	let notFound = $state(false);
@@ -11,10 +12,11 @@
 	let description = $state('');
 	let role = $state<AgentRole>('worker');
 	let systemPrompt = $state('');
-	let provider = $state('anthropic');
-	let model = $state('claude-sonnet');
+	let provider = $state('');
+	let model = $state('');
 	let sharing = $state<'personal' | 'team' | 'org'>('personal');
 	let tools = $state<string[]>([]);
+	let providers = $state<Provider[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let saved = $state(false);
@@ -28,18 +30,35 @@
 		{ id: 'code_interpreter', name: 'Code', desc: 'Run Python code', icon: 'M16 18l6-6-6-6M8 6l-6 6 6 6' }
 	];
 
+	function parseTools(raw: string): string[] {
+		try {
+			const parsed = JSON.parse(raw || '[]');
+			return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === 'string') : [];
+		} catch {
+			return [];
+		}
+	}
+
 	onMount(async () => {
-		const agents: Agent[] = JSON.parse(localStorage.getItem('forgebox_agents') ?? '[]');
-		const agent = agents.find((a) => a.id === agentId);
-		if (!agent) { notFound = true; return; }
-		name = agent.name;
-		description = agent.description;
-		role = agent.role;
-		systemPrompt = agent.system_prompt;
-		provider = agent.provider;
-		model = agent.model;
-		tools = [...agent.tools];
-		sharing = agent.sharing;
+		try {
+			[providers] = await Promise.all([listProviders()]);
+		} catch {
+			providers = [];
+		}
+		try {
+			const agent = await getAgent(agentId);
+			name = agent.name;
+			description = agent.description;
+			role = agent.role;
+			systemPrompt = agent.system_prompt;
+			provider = agent.provider;
+			model = agent.model;
+			tools = parseTools(agent.tools);
+			sharing = agent.sharing;
+		} catch {
+			notFound = true;
+			return;
+		}
 
 		try {
 			const files = await listBrainFiles(agentId);
@@ -61,22 +80,16 @@
 		error = null;
 		saved = false;
 		try {
-			const agents: Agent[] = JSON.parse(localStorage.getItem('forgebox_agents') ?? '[]');
-			const idx = agents.findIndex((a) => a.id === agentId);
-			if (idx === -1) throw new Error('Agent not found');
-			agents[idx] = {
-				...agents[idx],
+			await updateAgent(agentId, {
 				name: name.trim(),
 				description: description.trim(),
 				role,
 				system_prompt: systemPrompt.trim(),
 				provider,
 				model,
-				tools,
-				sharing,
-				updated_at: new Date().toISOString()
-			};
-			localStorage.setItem('forgebox_agents', JSON.stringify(agents));
+				tools: JSON.stringify(tools),
+				sharing
+			});
 			saved = true;
 			setTimeout(() => { saved = false; }, 2000);
 		} catch (err) {
@@ -167,20 +180,7 @@
 
 			<section class="sec">
 				<span class="sec__label">Model</span>
-				<div class="sec__row">
-					<label class="fld fld--grow">
-						<span class="fld__lbl">Provider</span>
-						<select class="fld__input" bind:value={provider} disabled={loading}>
-							<option value="anthropic">Anthropic</option>
-							<option value="openai">OpenAI</option>
-							<option value="ollama">Ollama</option>
-						</select>
-					</label>
-					<label class="fld fld--grow">
-						<span class="fld__lbl">Model ID</span>
-						<input class="fld__input" type="text" bind:value={model} placeholder="claude-sonnet" disabled={loading} />
-					</label>
-				</div>
+				<ModelSelector {providers} bind:provider bind:model disabled={loading} compact />
 			</section>
 
 			<section class="sec">

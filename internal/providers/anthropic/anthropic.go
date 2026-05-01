@@ -48,13 +48,7 @@ func (p *Provider) Init(_ context.Context, config map[string]any) error {
 func (p *Provider) Shutdown(_ context.Context) error { return nil }
 
 // Models returns the list of supported Anthropic models.
-func (p *Provider) Models() []sdk.Model {
-	return []sdk.Model{
-		{ID: "claude-sonnet-4-6", Name: "Claude Sonnet 4.6", MaxInputTokens: 200000, MaxOutputTokens: 16384, SupportsTools: true, SupportsVision: true},
-		{ID: "claude-haiku-4-5-20251001", Name: "Claude Haiku 4.5", MaxInputTokens: 200000, MaxOutputTokens: 8192, SupportsTools: true, SupportsVision: true},
-		{ID: "claude-opus-4-6", Name: "Claude Opus 4.6", MaxInputTokens: 200000, MaxOutputTokens: 16384, SupportsTools: true, SupportsVision: true},
-	}
-}
+func (p *Provider) Models() []sdk.Model { return Models() }
 
 // Complete sends a completion request to the Anthropic API.
 func (p *Provider) Complete(ctx context.Context, req *sdk.CompletionRequest) (*sdk.CompletionResponse, error) {
@@ -209,10 +203,18 @@ func (p *Provider) buildRequest(req *sdk.CompletionRequest) *anthropicRequest {
 
 	tools := make([]anthropicTool, 0, len(req.Tools))
 	for _, t := range req.Tools {
+		// Anthropic rejects tools with a missing or non-object input_schema
+		// (HTTP 400: "tools.0.custom.input_schema: Input does not match the
+		// expected shape"), so fall back to a valid empty-object schema if
+		// the plugin didn't supply one.
+		schema := t.InputSchema
+		if schema == nil {
+			schema = map[string]any{"type": "object", "properties": map[string]any{}}
+		}
 		tools = append(tools, anthropicTool{
 			Name:        t.Name,
 			Description: t.Description,
-			InputSchema: t.InputSchema,
+			InputSchema: schema,
 		})
 	}
 

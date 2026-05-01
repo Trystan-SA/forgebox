@@ -3,6 +3,7 @@
 	import { listProviders, createTask, streamTask, cancelTask } from '$lib/api/client';
 	import type { Provider, TaskEvent } from '$lib/api/types';
 	import TaskStream from '$lib/components/TaskStream.svelte';
+	import ModelSelector from '$lib/components/ModelSelector.svelte';
 
 	let prompt = $state('');
 	let provider = $state('');
@@ -92,18 +93,13 @@
 	></textarea>
 
 	<div class="settings">
-		<select class="settings__select" bind:value={provider} disabled={isRunning}>
-			<option value="">Provider (auto)</option>
-			{#each providers as p}
-				<option value={p.name}>{p.name}</option>
-			{/each}
-		</select>
-
-		<input
-			class="settings__input"
-			placeholder="Model (default)"
-			bind:value={model}
+		<ModelSelector
+			{providers}
+			bind:provider
+			bind:model
 			disabled={isRunning}
+			allowAuto
+			compact
 		/>
 
 		<select class="settings__select" bind:value={memoryMb} disabled={isRunning}>

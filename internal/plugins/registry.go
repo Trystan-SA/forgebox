@@ -174,7 +174,9 @@ func (r *Registry) GetProvider(name string) (sdk.ProviderPlugin, error) {
 	return entry.plugin, nil
 }
 
-// ListProviders returns all registered providers.
+// ListProviders returns all registered providers, including the models each
+// provider exposes. The model list is in the provider's preferred display
+// order (most powerful first) so dashboards can default to the first entry.
 func (r *Registry) ListProviders() []sdk.PluginMeta {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -187,6 +189,7 @@ func (r *Registry) ListProviders() []sdk.PluginMeta {
 			Builtin:      entry.id == "",
 			ID:           entry.id,
 			ProviderType: entry.recordType,
+			Models:       entry.plugin.Models(),
 		})
 	}
 	return out
@@ -260,19 +263,78 @@ func loadBuiltinProvider(name string, _ map[string]any) (sdk.ProviderPlugin, err
 	return NewProvider(name)
 }
 
-// registerBuiltinTools registers the host-side tool definitions.
+// registerBuiltinTools registers the host-side tool definitions. Each tool
+// includes a JSON Schema for its input — Anthropic's /v1/messages rejects
+// any tool whose `input_schema` is missing or not a valid object schema, so
+// the LLM-facing definitions must always carry one even when execution is
+// delegated to the in-VM agent.
 func (r *Registry) registerBuiltinTools() {
+	stringProp := func(desc string) map[string]any {
+		return map[string]any{"type": "string", "description": desc}
+	}
+	objectSchema := func(props map[string]any, required ...string) map[string]any {
+		s := map[string]any{"type": "object", "properties": props}
+		if len(required) > 0 {
+			s["required"] = required
+		}
+		return s
+	}
+
 	builtins := []sdk.ToolPlugin{
-		&builtinTool{name: "bash", desc: "Execute a shell command"},
-		&builtinTool{name: "file_read", desc: "Read a file"},
-		&builtinTool{name: "file_write", desc: "Write a file"},
-		&builtinTool{name: "file_edit", desc: "Edit a file via string replacement"},
-		&builtinTool{name: "glob", desc: "Find files matching a pattern"},
-		&builtinTool{name: "grep", desc: "Search file contents"},
-		&builtinTool{name: "web_fetch", desc: "Fetch a URL"},
+		&builtinTool{
+			name:   "bash",
+			desc:   "Execute a shell command inside the task VM.",
+			schema: objectSchema(map[string]any{"command": stringProp("The shell command to run.")}, "command"),
+		},
+		&builtinTool{
+			name:   "file_read",
+			desc:   "Read a file from the task VM filesystem.",
+			schema: objectSchema(map[string]any{"path": stringProp("Absolute path of the file to read.")}, "path"),
+		},
+		&builtinTool{
+			name: "file_write",
+			desc: "Write a file in the task VM filesystem, replacing existing content.",
+			schema: objectSchema(map[string]any{
+				"path":    stringProp("Absolute path of the file to write."),
+				"content": stringProp("Full file contents to write."),
+			}, "path", "content"),
+		},
+		&builtinTool{
+			name: "file_edit",
+			desc: "Edit a file via exact string replacement.",
+			schema: objectSchema(map[string]any{
+				"path":       stringProp("Absolute path of the file to edit."),
+				"old_string": stringProp("Existing text to replace; must match exactly once."),
+				"new_string": stringProp("Replacement text."),
+			}, "path", "old_string", "new_string"),
+		},
+		&builtinTool{
+			name:   "glob",
+			desc:   "Find files matching a glob pattern.",
+			schema: objectSchema(map[string]any{"pattern": stringProp("Glob pattern, e.g. **/*.go.")}, "pattern"),
+		},
+		&builtinTool{
+			name: "grep",
+			desc: "Search file contents for a pattern.",
+			schema: objectSchema(map[string]any{
+				"pattern": stringProp("Regular expression to search for."),
+				"path":    stringProp("Optional path or glob to scope the search."),
+			}, "pattern"),
+		},
+		&builtinTool{
+			name:   "web_fetch",
+			desc:   "Fetch a URL and return its body as text.",
+			schema: objectSchema(map[string]any{"url": stringProp("Absolute http(s) URL to fetch.")}, "url"),
+		},
 		&builtinTool{
 			name: "brain",
 			desc: "Search, read, and write to your persistent memory. Actions: search (query your memory), read (get a specific file), write (create or update a file), list (list all files), delete (remove a file).",
+			schema: objectSchema(map[string]any{
+				"action":  map[string]any{"type": "string", "enum": []string{"search", "read", "write", "list", "delete"}, "description": "Memory operation to perform."},
+				"query":   stringProp("Search query (action=search)."),
+				"path":    stringProp("File path (action=read|write|delete)."),
+				"content": stringProp("File contents (action=write)."),
+			}, "action"),
 		},
 	}
 	for _, t := range builtins {
@@ -283,8 +345,9 @@ func (r *Registry) registerBuiltinTools() {
 // builtinTool is a host-side tool definition. Actual execution is delegated
 // to the in-VM agent; this just provides the schema for the LLM.
 type builtinTool struct {
-	name string
-	desc string
+	name   string
+	desc   string
+	schema map[string]any
 }
 
 func (t *builtinTool) Name() string    { return t.name }
@@ -294,7 +357,7 @@ func (t *builtinTool) Init(_ context.Context, _ map[string]any) error { return n
 func (t *builtinTool) Shutdown(_ context.Context) error               { return nil }
 
 func (t *builtinTool) Schema() sdk.ToolSchema {
-	return sdk.ToolSchema{Name: t.name, Description: t.desc}
+	return sdk.ToolSchema{Name: t.name, Description: t.desc, InputSchema: t.schema}
 }
 
 func (t *builtinTool) Execute(_ context.Context, _ json.RawMessage) (*sdk.ToolExecResult, error) {

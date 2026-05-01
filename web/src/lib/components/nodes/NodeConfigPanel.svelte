@@ -1,5 +1,8 @@
 <script lang="ts">
 	import type { Node } from '@xyflow/svelte';
+	import { onMount } from 'svelte';
+	import { loadProviders, providersStore } from '$lib/stores/providers.svelte';
+	import ModelSelector from '$lib/components/ModelSelector.svelte';
 
 	interface Props {
 		node: Node;
@@ -19,6 +22,27 @@
 		data[field] = value;
 		onupdate(node.id, { ...data });
 	}
+
+	// Mirror data.provider / data.model into local state so we can use
+	// ModelSelector's bind:value pattern, then push changes back via update().
+	let aiProvider = $state('');
+	let aiModel = $state('');
+
+	$effect(() => {
+		aiProvider = (data.provider as string) ?? '';
+		aiModel = (data.model as string) ?? '';
+	});
+
+	$effect(() => {
+		if (aiProvider !== (data.provider ?? '')) update('provider', aiProvider);
+	});
+	$effect(() => {
+		if (aiModel !== (data.model ?? '')) update('model', aiModel);
+	});
+
+	onMount(() => {
+		void loadProviders();
+	});
 
 	let panelWidth = $state(320);
 	let resizing = $state(false);
@@ -341,18 +365,10 @@
 		{/if}
 
 		{#if node.type === 'aiStep'}
-			<label class="panel__field">
-				<span class="panel__label">Provider</span>
-				<select class="panel__select" value={data.provider ?? ''} onchange={(e) => update('provider', e.currentTarget.value)}>
-					<option value="anthropic">Anthropic</option>
-					<option value="openai">OpenAI</option>
-					<option value="ollama">Ollama</option>
-				</select>
-			</label>
-			<label class="panel__field">
+			<div class="panel__field">
 				<span class="panel__label">Model</span>
-				<input class="panel__input" type="text" value={data.model ?? ''} oninput={(e) => update('model', e.currentTarget.value)} placeholder="e.g. claude-sonnet" />
-			</label>
+				<ModelSelector providers={providersStore.providers} bind:provider={aiProvider} bind:model={aiModel} compact />
+			</div>
 			<label class="panel__field">
 				<span class="panel__label">Prompt</span>
 				<textarea class="panel__textarea" value={data.prompt ?? ''} oninput={(e) => update('prompt', e.currentTarget.value)} placeholder="Enter prompt..." rows="5"></textarea>

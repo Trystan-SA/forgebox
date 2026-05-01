@@ -16,6 +16,7 @@ type StoragePlugin interface {
 	AutomationStore
 	AppStore
 	ProviderStore
+	AgentStore
 }
 
 // TaskStore manages task persistence.
@@ -239,4 +240,39 @@ type ProviderRecord struct {
 	ConfigEncrypted string    `json:"-"`    // AEAD-sealed JSON of the provider config map
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+// AgentStore manages agent persistence. See specs/1.0.0-agents.md.
+type AgentStore interface {
+	CreateAgent(ctx context.Context, agent *AgentRecord) error
+	GetAgent(ctx context.Context, id string) (*AgentRecord, error)
+	UpdateAgent(ctx context.Context, agent *AgentRecord) error
+	DeleteAgent(ctx context.Context, id string) error
+	ListAgents(ctx context.Context, filter AgentFilter) ([]*AgentRecord, error)
+}
+
+// AgentRecord is one stored agent. Tools is a JSON-encoded array of tool
+// names, mirroring AppRecord.Tools so the column type stays uniform.
+type AgentRecord struct {
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	Description  string    `json:"description"`
+	Role         string    `json:"role"` // "worker" or "orchestrator"
+	SystemPrompt string    `json:"system_prompt"`
+	Provider     string    `json:"provider"`
+	Model        string    `json:"model"`
+	Tools        string    `json:"tools"`   // JSON array of tool names
+	Sharing      string    `json:"sharing"` // "personal", "team", "org"
+	TeamID       string    `json:"team_id,omitempty"`
+	CreatedBy    string    `json:"created_by"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// AgentFilter specifies criteria for listing agents.
+type AgentFilter struct {
+	UserID string
+	TeamID string
+	Limit  int
+	Offset int
 }

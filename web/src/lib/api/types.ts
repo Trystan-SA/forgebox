@@ -66,6 +66,15 @@ export type ProviderType =
 	| 'openai'
 	| 'ollama';
 
+export interface ProviderModel {
+	id: string;
+	name: string;
+	max_input_tokens: number;
+	max_output_tokens: number;
+	supports_tools: boolean;
+	supports_vision: boolean;
+}
+
 export interface Provider {
 	name: string;
 	version: string;
@@ -73,11 +82,11 @@ export interface Provider {
 	builtin: boolean;
 	id?: string;
 	provider_type?: ProviderType;
+	models?: ProviderModel[];
 }
 
 export interface CreateProviderRequest {
 	type: ProviderType;
-	name: string;
 	config: Record<string, unknown>;
 }
 
@@ -201,6 +210,9 @@ export interface TokenUsage {
 export type AgentSharing = 'personal' | 'team' | 'org';
 export type AgentRole = 'worker' | 'orchestrator';
 
+// Tools is stored as a JSON-encoded array on the wire (matches the backend
+// AgentRecord schema). Helpers in client.ts marshal to/from string[] so
+// dashboard code never sees the JSON encoding.
 export interface Agent {
 	id: string;
 	name: string;
@@ -209,8 +221,9 @@ export interface Agent {
 	system_prompt: string;
 	provider: string;
 	model: string;
-	tools: string[];
+	tools: string;
 	sharing: AgentSharing;
+	team_id?: string;
 	created_by: string;
 	created_at: string;
 	updated_at: string;
@@ -223,8 +236,21 @@ export interface CreateAgentRequest {
 	system_prompt?: string;
 	provider?: string;
 	model?: string;
-	tools?: string[];
+	tools?: string; // JSON-encoded string[]
 	sharing?: AgentSharing;
+	team_id?: string;
+}
+
+export interface UpdateAgentRequest {
+	name?: string;
+	description?: string;
+	role?: AgentRole;
+	system_prompt?: string;
+	provider?: string;
+	model?: string;
+	tools?: string; // JSON-encoded string[]
+	sharing?: AgentSharing;
+	team_id?: string;
 }
 
 export type AppStatus = 'draft' | 'deploying' | 'running' | 'stopped' | 'error';

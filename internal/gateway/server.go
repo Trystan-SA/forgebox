@@ -676,11 +676,10 @@ func (s *Server) handleDeleteApp(w http.ResponseWriter, r *http.Request) {
 // --- Agent handlers ---
 //
 // See specs/1.0.0-agents.md. The handlers persist agent records and enforce
-// the validation rules in 1.2.3 (sharing values, role values, provider /
-// model existence, tool name allow-list).
+// the validation rules in 1.2.3 (sharing values, provider / model existence,
+// tool name allow-list).
 
 var validAgentSharing = map[string]bool{"personal": true, "team": true, "org": true}
-var validAgentRoles = map[string]bool{"worker": true, "orchestrator": true}
 
 // validateAgentRefs checks that the provider, model, and tool names on an
 // incoming agent record correspond to objects the gateway actually knows
@@ -743,7 +742,6 @@ func (s *Server) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name         string `json:"name"`
 		Description  string `json:"description"`
-		Role         string `json:"role"`
 		SystemPrompt string `json:"system_prompt"`
 		Provider     string `json:"provider"`
 		Model        string `json:"model"`
@@ -757,13 +755,6 @@ func (s *Server) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(req.Name) == "" {
 		writeError(w, http.StatusBadRequest, "name is required")
-		return
-	}
-	if req.Role == "" {
-		req.Role = "worker"
-	}
-	if !validAgentRoles[req.Role] {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid role %q", req.Role))
 		return
 	}
 	if req.Sharing == "" {
@@ -790,7 +781,6 @@ func (s *Server) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
 		ID:           uuid.New().String(),
 		Name:         strings.TrimSpace(req.Name),
 		Description:  req.Description,
-		Role:         req.Role,
 		SystemPrompt: req.SystemPrompt,
 		Provider:     req.Provider,
 		Model:        req.Model,
@@ -830,7 +820,6 @@ func (s *Server) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name         *string `json:"name,omitempty"`
 		Description  *string `json:"description,omitempty"`
-		Role         *string `json:"role,omitempty"`
 		SystemPrompt *string `json:"system_prompt,omitempty"`
 		Provider     *string `json:"provider,omitempty"`
 		Model        *string `json:"model,omitempty"`
@@ -852,13 +841,6 @@ func (s *Server) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Description != nil {
 		existing.Description = *req.Description
-	}
-	if req.Role != nil {
-		if !validAgentRoles[*req.Role] {
-			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid role %q", *req.Role))
-			return
-		}
-		existing.Role = *req.Role
 	}
 	if req.SystemPrompt != nil {
 		existing.SystemPrompt = *req.SystemPrompt

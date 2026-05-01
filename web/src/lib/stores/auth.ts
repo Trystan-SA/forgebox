@@ -1,6 +1,7 @@
 import { writable, derived } from 'svelte/store';
 import type { User, UserRole } from '$lib/api/types';
 import { login as apiLogin } from '$lib/api/client';
+import { reconnect as reconnectSocket } from '$lib/stores/socket.svelte';
 
 interface AuthState {
 	user: User | null;
@@ -34,16 +35,19 @@ function createAuthStore() {
 			localStorage.setItem('forgebox_token', res.token);
 			localStorage.setItem('forgebox_user', JSON.stringify(res.user));
 			set({ user: res.user, token: res.token });
+			reconnectSocket();
 		},
 		logout() {
 			localStorage.removeItem('forgebox_token');
 			localStorage.removeItem('forgebox_user');
 			set({ user: null, token: null });
+			reconnectSocket();
 		},
 		setUser(user: User, token: string) {
 			localStorage.setItem('forgebox_token', token);
 			localStorage.setItem('forgebox_user', JSON.stringify(user));
 			set({ user, token });
+			reconnectSocket();
 		}
 	};
 }

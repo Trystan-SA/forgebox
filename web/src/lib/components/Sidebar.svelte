@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { auth, currentUser } from '$lib/stores/auth';
+	import { socketStore } from '$lib/stores/socket.svelte';
 
 	interface NavItem {
 		name: string;
@@ -175,9 +176,9 @@
 			</div>
 		{/if}
 		<div class="sb__status">
-			<span class="sb__pulse"></span>
+			<span class="sb__pulse" class:sb__pulse--off={!socketStore.connected}></span>
 			{#if !collapsed}
-				<span class="sb__foot-text">Connected</span>
+				<span class="sb__foot-text">{socketStore.connected ? 'Connected' : 'Disconnected'}</span>
 				<span class="sb__foot-ver">v0.1.0</span>
 			{/if}
 		</div>
@@ -616,6 +617,11 @@
 			background: $success-500;
 			flex-shrink: 0;
 			box-shadow: 0 0 0 2px rgba($success-500, 0.2);
+
+			&--off {
+				background: $error-500;
+				box-shadow: 0 0 0 2px rgba($error-500, 0.2);
+			}
 		}
 
 		&__foot-text {

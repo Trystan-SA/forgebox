@@ -3,6 +3,7 @@ module github.com/forgebox/forgebox
 go 1.23.0
 
 require (
+	github.com/coder/websocket v1.8.14
 	github.com/google/uuid v1.6.0
 	github.com/lib/pq v1.12.3
 	github.com/pgvector/pgvector-go v0.2.3

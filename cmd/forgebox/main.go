@@ -14,6 +14,7 @@ import (
 	"github.com/forgebox/forgebox/internal/config"
 	"github.com/forgebox/forgebox/internal/crypto"
 	"github.com/forgebox/forgebox/internal/engine"
+	"github.com/forgebox/forgebox/internal/events"
 	"github.com/forgebox/forgebox/internal/gateway"
 	"github.com/forgebox/forgebox/internal/permissions"
 	"github.com/forgebox/forgebox/internal/plugins"
@@ -166,6 +167,8 @@ func cmdServe() error {
 		Sessions:     sessionMgr,
 	})
 
+	bus := events.New(0)
+
 	srv := gateway.New(gateway.Config{
 		ListenAddr:     cfg.Server.Listen,
 		GRPCListenAddr: cfg.Server.GRPCListen,
@@ -176,6 +179,7 @@ func cmdServe() error {
 		BrainService:   brainSvc,
 		BrainStore:     brainStore,
 		SecretBox:      secretBox,
+		Events:         bus,
 	})
 
 	slog.Info("starting ForgeBox",

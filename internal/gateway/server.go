@@ -27,6 +27,7 @@ import (
 	"github.com/forgebox/forgebox/internal/events"
 	"github.com/forgebox/forgebox/internal/plugins"
 	"github.com/forgebox/forgebox/internal/sessions"
+	"github.com/forgebox/forgebox/internal/tasktoken"
 	"github.com/forgebox/forgebox/pkg/sdk"
 	"github.com/google/uuid"
 )
@@ -45,6 +46,11 @@ type Config struct {
 	// Events is the in-process event bus that producers publish to and the
 	// WebSocket Hub fans out to connected clients. Required.
 	Events *events.Bus
+	// TaskTokens stores short-lived `fbtask_…` tokens issued by the engine
+	// for in-VM tool callbacks. Resolved by userID() to map back to the
+	// originating user. Optional; when nil, fbtask_-prefixed bearer tokens
+	// resolve as invalid (empty user id → 401-eligible).
+	TaskTokens *tasktoken.Store
 }
 
 // Server is the main ForgeBox API server.
@@ -59,6 +65,7 @@ type Server struct {
 	brainStore   sdk.BrainStore
 	secretBox    *fbcrypto.SecretBox
 	hub          *Hub
+	taskTokens   *tasktoken.Store
 }
 
 // New creates a new gateway server. The event bus must be supplied; the
@@ -78,6 +85,7 @@ func New(cfg Config) *Server {
 		brainStore:   cfg.BrainStore,
 		secretBox:    cfg.SecretBox,
 		hub:          NewHub(cfg.Events, 0),
+		taskTokens:   cfg.TaskTokens,
 	}
 	s.registerRoutes()
 	return s
@@ -258,7 +266,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		VCPUs:         req.VCPUs,
 		Timeout:       timeout,
 		NetworkAccess: req.NetworkAccess,
-		UserID:        getUserID(r),
+		UserID:        s.userID(r),
 	}
 
 	// Persist the task before kicking off the runner so GET /tasks/{id}
@@ -332,7 +340,7 @@ func (s *Server) handleCancelTask(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 	tasks, err := s.store.ListTasks(r.Context(), sdk.TaskFilter{
-		UserID: getUserID(r),
+		UserID: s.userID(r),
 		Limit:  50,
 	})
 	if err != nil {
@@ -344,7 +352,7 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	sess, err := s.store.ListSessions(r.Context(), sdk.SessionFilter{
-		UserID: getUserID(r),
+		UserID: s.userID(r),
 		Limit:  50,
 	})
 	if err != nil {
@@ -525,7 +533,7 @@ func (s *Server) handleListTools(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 	apps, err := s.store.ListApps(r.Context(), sdk.AppFilter{
-		UserID: getUserID(r),
+		UserID: s.userID(r),
 		Limit:  100,
 	})
 	if err != nil {
@@ -571,7 +579,7 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		ID:          uuid.New().String(),
 		Name:        req.Name,
 		Description: req.Description,
-		CreatedBy:   getUserID(r),
+		CreatedBy:   s.userID(r),
 		Sharing:     req.Sharing,
 		TeamID:      req.TeamID,
 		Status:      sdk.AppDraft,
@@ -723,8 +731,13 @@ func (s *Server) validateAgentRefs(provider, model, toolsJSON string) error {
 }
 
 func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
+	uid := s.userID(r)
+	if uid == "" {
+		writeError(w, http.StatusUnauthorized, "invalid token")
+		return
+	}
 	agents, err := s.store.ListAgents(r.Context(), sdk.AgentFilter{
-		UserID: getUserID(r),
+		UserID: uid,
 		Limit:  100,
 	})
 	if err != nil {
@@ -739,6 +752,11 @@ func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
+	uid := s.userID(r)
+	if uid == "" {
+		writeError(w, http.StatusUnauthorized, "invalid token")
+		return
+	}
 	var req struct {
 		Name         string `json:"name"`
 		Description  string `json:"description"`
@@ -787,7 +805,7 @@ func (s *Server) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
 		Tools:        req.Tools,
 		Sharing:      req.Sharing,
 		TeamID:       req.TeamID,
-		CreatedBy:    getUserID(r),
+		CreatedBy:    uid,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
@@ -800,6 +818,10 @@ func (s *Server) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetAgent(w http.ResponseWriter, r *http.Request) {
+	if uid := s.userID(r); uid == "" {
+		writeError(w, http.StatusUnauthorized, "invalid token")
+		return
+	}
 	id := r.PathValue("id")
 	agent, err := s.store.GetAgent(r.Context(), id)
 	if err != nil {
@@ -810,6 +832,10 @@ func (s *Server) handleGetAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
+	if uid := s.userID(r); uid == "" {
+		writeError(w, http.StatusUnauthorized, "invalid token")
+		return
+	}
 	id := r.PathValue("id")
 	existing, err := s.store.GetAgent(r.Context(), id)
 	if err != nil {
@@ -882,6 +908,10 @@ func (s *Server) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteAgent(w http.ResponseWriter, r *http.Request) {
+	if uid := s.userID(r); uid == "" {
+		writeError(w, http.StatusUnauthorized, "invalid token")
+		return
+	}
 	id := r.PathValue("id")
 	if err := s.store.DeleteAgent(r.Context(), id); err != nil {
 		slog.Error("failed to delete agent", "error", err)
@@ -895,7 +925,7 @@ func (s *Server) handleDeleteAgent(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListAutomations(w http.ResponseWriter, r *http.Request) {
 	automations, err := s.store.ListAutomations(r.Context(), sdk.AutomationFilter{
-		UserID: getUserID(r),
+		UserID: s.userID(r),
 		Limit:  100,
 	})
 	if err != nil {
@@ -945,7 +975,7 @@ func (s *Server) handleCreateAutomation(w http.ResponseWriter, r *http.Request) 
 		ID:          uuid.New().String(),
 		Name:        req.Name,
 		Description: req.Description,
-		CreatedBy:   getUserID(r),
+		CreatedBy:   s.userID(r),
 		Sharing:     req.Sharing,
 		TeamID:      req.TeamID,
 		Trigger:     req.Trigger,
@@ -1223,13 +1253,26 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 
 // --- Helpers ---
 
-func getUserID(r *http.Request) string {
-	// TODO: Extract from auth middleware (JWT, API key, etc.).
+// userID resolves the calling user from the Authorization header. Bearer
+// tokens prefixed with `fbtask_` are looked up in TaskTokens (issued by the
+// engine for in-VM tool callbacks) and resolve to the originating user.
+// Other Bearer tokens fall back to the existing stub until proper auth
+// lands.
+func (s *Server) userID(r *http.Request) string {
 	auth := r.Header.Get("Authorization")
-	if strings.HasPrefix(auth, "Bearer ") {
-		return "authenticated-user"
+	if !strings.HasPrefix(auth, "Bearer ") {
+		return "anonymous"
 	}
-	return "anonymous"
+	token := strings.TrimPrefix(auth, "Bearer ")
+	if strings.HasPrefix(token, tasktoken.Prefix) {
+		if s.taskTokens != nil {
+			if userID, _, ok := s.taskTokens.Resolve(token); ok {
+				return userID
+			}
+		}
+		return "" // token-shaped but invalid → 401-eligible
+	}
+	return "authenticated-user"
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {

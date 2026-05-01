@@ -20,6 +20,7 @@ import (
 	"github.com/forgebox/forgebox/internal/plugins"
 	"github.com/forgebox/forgebox/internal/sessions"
 	"github.com/forgebox/forgebox/internal/storage/postgres"
+	"github.com/forgebox/forgebox/internal/tasktoken"
 	"github.com/forgebox/forgebox/internal/telemetry"
 	"github.com/forgebox/forgebox/internal/vm"
 	"github.com/forgebox/forgebox/pkg/sdk"
@@ -169,6 +170,11 @@ func cmdServe() error {
 
 	bus := events.New(0)
 
+	// Task tokens are issued by the engine (Task 8) for in-VM tool callbacks
+	// and resolved by the gateway's userID() to the originating user. Keep
+	// the same store on both sides — do not inline.
+	taskTokens := tasktoken.NewStore()
+
 	srv := gateway.New(gateway.Config{
 		ListenAddr:     cfg.Server.Listen,
 		GRPCListenAddr: cfg.Server.GRPCListen,
@@ -180,6 +186,7 @@ func cmdServe() error {
 		BrainStore:     brainStore,
 		SecretBox:      secretBox,
 		Events:         bus,
+		TaskTokens:     taskTokens,
 	})
 
 	slog.Info("starting ForgeBox",

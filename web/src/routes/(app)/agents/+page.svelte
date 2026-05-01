@@ -1,21 +1,41 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { Agent } from '$lib/api/types';
+	import { listAgents, deleteAgent } from '$lib/api/client';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import { formatDistanceToNow } from 'date-fns';
 
 	let agents = $state<Agent[]>([]);
 	let loading = $state(true);
+	let error = $state<string | null>(null);
 
-	onMount(() => {
-		agents = JSON.parse(localStorage.getItem('forgebox_agents') ?? '[]');
-		loading = false;
+	onMount(async () => {
+		try {
+			agents = await listAgents();
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to load agents';
+		} finally {
+			loading = false;
+		}
 	});
 
-	function handleDelete(id: string) {
+	async function handleDelete(id: string) {
 		if (!confirm('Delete this agent?')) return;
-		agents = agents.filter((a) => a.id !== id);
-		localStorage.setItem('forgebox_agents', JSON.stringify(agents));
+		try {
+			await deleteAgent(id);
+			agents = agents.filter((a) => a.id !== id);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to delete agent';
+		}
+	}
+
+	function toolCount(toolsJSON: string): number {
+		try {
+			const parsed = JSON.parse(toolsJSON || '[]');
+			return Array.isArray(parsed) ? parsed.length : 0;
+		} catch {
+			return 0;
+		}
 	}
 
 	function sharingLabel(s: string) {
@@ -36,6 +56,8 @@
 
 	{#if loading}
 		<p class="page__loading">Loading...</p>
+	{:else if error}
+		<p class="page__error">{error}</p>
 	{:else if agents.length === 0}
 		<EmptyState
 			title="No agents yet"
@@ -48,6 +70,7 @@
 	{:else}
 		<div class="grid">
 			{#each agents as agent}
+				{@const tc = toolCount(agent.tools)}
 				<a href="/agents/{agent.id}" class="card">
 					<div class="card__top">
 						<div class="card__title-row">
@@ -58,10 +81,14 @@
 							<p class="card__desc">{agent.description}</p>
 						{/if}
 						<div class="card__meta-row">
-							<span class="card__chip">{agent.provider}</span>
-							<span class="card__chip">{agent.model}</span>
-							{#if agent.tools.length > 0}
-								<span class="card__chip">{agent.tools.length} tool{agent.tools.length > 1 ? 's' : ''}</span>
+							{#if agent.provider}
+								<span class="card__chip">{agent.provider}</span>
+							{/if}
+							{#if agent.model}
+								<span class="card__chip">{agent.model}</span>
+							{/if}
+							{#if tc > 0}
+								<span class="card__chip">{tc} tool{tc > 1 ? 's' : ''}</span>
 							{/if}
 						</div>
 					</div>

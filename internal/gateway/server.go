@@ -193,6 +193,13 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("DELETE /api/v1/providers/{id}", s.handleDeleteProvider)
 	s.mux.HandleFunc("GET /api/v1/tools", s.handleListTools)
 
+	// Agent endpoints.
+	s.mux.HandleFunc("GET /api/v1/agents", s.handleListAgents)
+	s.mux.HandleFunc("POST /api/v1/agents", s.handleCreateAgent)
+	s.mux.HandleFunc("GET /api/v1/agents/{id}", s.handleGetAgent)
+	s.mux.HandleFunc("PUT /api/v1/agents/{id}", s.handleUpdateAgent)
+	s.mux.HandleFunc("DELETE /api/v1/agents/{id}", s.handleDeleteAgent)
+
 	// Brain endpoints.
 	s.mux.HandleFunc("GET /api/v1/agents/{id}/brain", s.handleGetBrain)
 	s.mux.HandleFunc("GET /api/v1/agents/{id}/brain/files", s.handleListBrainFiles)
@@ -254,15 +261,48 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		UserID:        getUserID(r),
 	}
 
-	// Run the task asynchronously.
+	// Persist the task before kicking off the runner so GET /tasks/{id}
+	// can answer the dashboard's poll while the engine is still working.
+	// Without this row, the poll loops on 404 until it times out.
+	now := time.Now().UTC()
+	record := &sdk.TaskRecord{
+		ID:        task.ID,
+		Status:    sdk.TaskRunning,
+		Prompt:    task.Prompt,
+		Provider:  task.Provider,
+		Model:     task.Model,
+		UserID:    task.UserID,
+		CreatedAt: now,
+		StartedAt: &now,
+	}
+	if err := s.store.CreateTask(r.Context(), record); err != nil {
+		slog.Error("create task record", "task_id", task.ID, "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to create task")
+		return
+	}
+
+	// Run the task asynchronously and persist the terminal status so the
+	// dashboard's poll converges on completed/failed.
 	go func() {
 		ctx := context.Background()
 		result, err := s.engine.Run(ctx, task)
+		completed := time.Now().UTC()
+		record.CompletedAt = &completed
 		if err != nil {
 			slog.Error("task failed", "task_id", task.ID, "error", err)
-			return
+			record.Status = sdk.TaskFailed
+			record.Error = friendlyTaskError(err)
+		} else {
+			slog.Info("task completed", "task_id", task.ID, "tool_uses", result.ToolUses)
+			record.Status = sdk.TaskCompleted
+			record.Result = result.Output
+			record.TokensIn = result.Cost.InputTokens
+			record.TokensOut = result.Cost.OutputTokens
+			record.Cost = result.Cost.TotalCost
 		}
-		slog.Info("task completed", "task_id", task.ID, "tool_uses", result.ToolUses)
+		if uerr := s.store.UpdateTask(ctx, record); uerr != nil {
+			slog.Error("update task record", "task_id", task.ID, "error", uerr)
+		}
 	}()
 
 	writeJSON(w, http.StatusAccepted, map[string]string{
@@ -343,7 +383,6 @@ func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
 
 type createProviderRequest struct {
 	Type   string         `json:"type"`
-	Name   string         `json:"name"`
 	Config map[string]any `json:"config"`
 }
 
@@ -358,18 +397,41 @@ func (s *Server) handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Type = strings.TrimSpace(req.Type)
-	req.Name = strings.TrimSpace(req.Name)
-	if req.Type == "" || req.Name == "" {
-		writeError(w, http.StatusBadRequest, "type and name are required")
+	if req.Type == "" {
+		writeError(w, http.StatusBadRequest, "type is required")
 		return
 	}
 	if req.Config == nil {
 		req.Config = map[string]any{}
 	}
 
-	// Conflict if the registry already serves this name (built-in or DB-backed).
-	if _, err := s.registry.GetProvider(req.Name); err == nil {
-		writeError(w, http.StatusConflict, fmt.Sprintf("provider name %q already in use", req.Name))
+	// The display name is derived from the type — operators do not get to
+	// customize it (see specs/3.1.2). Reject unknown types early so the user
+	// gets a clear error before we touch the registry or DB.
+	label, ok := plugins.LabelForType(req.Type)
+	if !ok {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider type %q", req.Type))
+		return
+	}
+
+	// Conflict if a provider of this type is already configured. We only
+	// permit one DB-backed provider per type now that names are derived.
+	rows, err := s.store.ListProviders(r.Context())
+	if err != nil {
+		slog.Error("list providers for dedup", "error", err)
+		writeError(w, http.StatusInternalServerError, "load providers")
+		return
+	}
+	for _, row := range rows {
+		if row.Type == req.Type {
+			writeError(w, http.StatusConflict, fmt.Sprintf("provider type %q is already configured", req.Type))
+			return
+		}
+	}
+	// Also conflict with a registry-name collision (e.g. a built-in keyed
+	// under the same label as the derived one).
+	if _, err := s.registry.GetProvider(label); err == nil {
+		writeError(w, http.StatusConflict, fmt.Sprintf("provider %q already in use", label))
 		return
 	}
 
@@ -401,7 +463,7 @@ func (s *Server) handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 
 	rec := &sdk.ProviderRecord{
 		Type:            req.Type,
-		Name:            req.Name,
+		Name:            label,
 		ConfigEncrypted: sealed,
 	}
 	if err := s.store.CreateProvider(r.Context(), rec); err != nil {
@@ -606,6 +668,242 @@ func (s *Server) handleDeleteApp(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.DeleteApp(r.Context(), id); err != nil {
 		slog.Error("failed to delete app", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to delete app")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+// --- Agent handlers ---
+//
+// See specs/1.0.0-agents.md. The handlers persist agent records and enforce
+// the validation rules in 1.2.3 (sharing values, role values, provider /
+// model existence, tool name allow-list).
+
+var validAgentSharing = map[string]bool{"personal": true, "team": true, "org": true}
+var validAgentRoles = map[string]bool{"worker": true, "orchestrator": true}
+
+// validateAgentRefs checks that the provider, model, and tool names on an
+// incoming agent record correspond to objects the gateway actually knows
+// about. provider/model are optional at create-time per spec 1.2.3; tools
+// must always be a JSON array of registered tool names if non-empty.
+func (s *Server) validateAgentRefs(provider, model, toolsJSON string) error {
+	if provider != "" {
+		p, err := s.registry.GetProvider(provider)
+		if err != nil {
+			return fmt.Errorf("provider %q is not configured", provider)
+		}
+		if model != "" {
+			found := false
+			for _, m := range p.Models() {
+				if m.ID == model {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("model %q is not available on provider %q", model, provider)
+			}
+		}
+	}
+	if toolsJSON != "" && toolsJSON != "[]" {
+		var names []string
+		if err := json.Unmarshal([]byte(toolsJSON), &names); err != nil {
+			return fmt.Errorf("tools must be a JSON array of strings")
+		}
+		known := map[string]bool{}
+		for _, t := range s.registry.ListTools() {
+			known[t.Name()] = true
+		}
+		for _, n := range names {
+			if !known[n] {
+				return fmt.Errorf("tool %q is not registered", n)
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
+	agents, err := s.store.ListAgents(r.Context(), sdk.AgentFilter{
+		UserID: getUserID(r),
+		Limit:  100,
+	})
+	if err != nil {
+		slog.Error("failed to list agents", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to list agents")
+		return
+	}
+	if agents == nil {
+		agents = []*sdk.AgentRecord{}
+	}
+	writeJSON(w, http.StatusOK, agents)
+}
+
+func (s *Server) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name         string `json:"name"`
+		Description  string `json:"description"`
+		Role         string `json:"role"`
+		SystemPrompt string `json:"system_prompt"`
+		Provider     string `json:"provider"`
+		Model        string `json:"model"`
+		Tools        string `json:"tools"`
+		Sharing      string `json:"sharing"`
+		TeamID       string `json:"team_id,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	if req.Role == "" {
+		req.Role = "worker"
+	}
+	if !validAgentRoles[req.Role] {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid role %q", req.Role))
+		return
+	}
+	if req.Sharing == "" {
+		req.Sharing = "personal"
+	}
+	if !validAgentSharing[req.Sharing] {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid sharing %q", req.Sharing))
+		return
+	}
+	if req.Sharing == "team" && req.TeamID == "" {
+		writeError(w, http.StatusBadRequest, "team_id is required when sharing is team")
+		return
+	}
+	if req.Tools == "" {
+		req.Tools = "[]"
+	}
+	if err := s.validateAgentRefs(req.Provider, req.Model, req.Tools); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	now := time.Now()
+	agent := &sdk.AgentRecord{
+		ID:           uuid.New().String(),
+		Name:         strings.TrimSpace(req.Name),
+		Description:  req.Description,
+		Role:         req.Role,
+		SystemPrompt: req.SystemPrompt,
+		Provider:     req.Provider,
+		Model:        req.Model,
+		Tools:        req.Tools,
+		Sharing:      req.Sharing,
+		TeamID:       req.TeamID,
+		CreatedBy:    getUserID(r),
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	if err := s.store.CreateAgent(r.Context(), agent); err != nil {
+		slog.Error("failed to create agent", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to create agent")
+		return
+	}
+	writeJSON(w, http.StatusCreated, agent)
+}
+
+func (s *Server) handleGetAgent(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	agent, err := s.store.GetAgent(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "agent not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, agent)
+}
+
+func (s *Server) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	existing, err := s.store.GetAgent(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "agent not found")
+		return
+	}
+
+	var req struct {
+		Name         *string `json:"name,omitempty"`
+		Description  *string `json:"description,omitempty"`
+		Role         *string `json:"role,omitempty"`
+		SystemPrompt *string `json:"system_prompt,omitempty"`
+		Provider     *string `json:"provider,omitempty"`
+		Model        *string `json:"model,omitempty"`
+		Tools        *string `json:"tools,omitempty"`
+		Sharing      *string `json:"sharing,omitempty"`
+		TeamID       *string `json:"team_id,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.Name != nil {
+		if strings.TrimSpace(*req.Name) == "" {
+			writeError(w, http.StatusBadRequest, "name cannot be empty")
+			return
+		}
+		existing.Name = strings.TrimSpace(*req.Name)
+	}
+	if req.Description != nil {
+		existing.Description = *req.Description
+	}
+	if req.Role != nil {
+		if !validAgentRoles[*req.Role] {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid role %q", *req.Role))
+			return
+		}
+		existing.Role = *req.Role
+	}
+	if req.SystemPrompt != nil {
+		existing.SystemPrompt = *req.SystemPrompt
+	}
+	if req.Provider != nil {
+		existing.Provider = *req.Provider
+	}
+	if req.Model != nil {
+		existing.Model = *req.Model
+	}
+	if req.Tools != nil {
+		existing.Tools = *req.Tools
+	}
+	if req.Sharing != nil {
+		if !validAgentSharing[*req.Sharing] {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid sharing %q", *req.Sharing))
+			return
+		}
+		existing.Sharing = *req.Sharing
+	}
+	if req.TeamID != nil {
+		existing.TeamID = *req.TeamID
+	}
+	if existing.Sharing == "team" && existing.TeamID == "" {
+		writeError(w, http.StatusBadRequest, "team_id is required when sharing is team")
+		return
+	}
+	if err := s.validateAgentRefs(existing.Provider, existing.Model, existing.Tools); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if err := s.store.UpdateAgent(r.Context(), existing); err != nil {
+		slog.Error("failed to update agent", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to update agent")
+		return
+	}
+	writeJSON(w, http.StatusOK, existing)
+}
+
+func (s *Server) handleDeleteAgent(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := s.store.DeleteAgent(r.Context(), id); err != nil {
+		slog.Error("failed to delete agent", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to delete agent")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
@@ -960,4 +1258,23 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// friendlyTaskError maps an engine.Run error chain to a short, user-facing
+// message to persist as TaskRecord.Error. The full wrapped error is still
+// logged via slog at the call site for operators. Falls back to err.Error()
+// when no sentinel matches so unexpected failures stay debuggable in the UI.
+func friendlyTaskError(err error) string {
+	switch {
+	case errors.Is(err, sdk.ErrRateLimit):
+		return "Rate limit exceeded. The provider is throttling requests — wait a moment and try again, or switch to a different model."
+	case errors.Is(err, sdk.ErrAuth):
+		return "Provider authentication failed. The configured credentials are missing, expired, or unauthorized — reconfigure the provider in Settings."
+	case errors.Is(err, sdk.ErrInputTooLarge):
+		return "The prompt is too large for this model's context window. Shorten it or pick a model with a larger context."
+	case errors.Is(err, sdk.ErrTransient):
+		return "The provider is temporarily unavailable. Try again in a moment."
+	default:
+		return err.Error()
+	}
 }

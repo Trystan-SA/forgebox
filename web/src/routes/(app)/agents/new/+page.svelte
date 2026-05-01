@@ -1,15 +1,19 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import type { AgentRole, Agent } from '$lib/api/types';
+	import { createAgent, listProviders } from '$lib/api/client';
+	import type { AgentRole, Provider } from '$lib/api/types';
+	import ModelSelector from '$lib/components/ModelSelector.svelte';
 
 	let name = $state('');
 	let description = $state('');
 	let role = $state<AgentRole>('worker');
 	let systemPrompt = $state('');
-	let provider = $state('anthropic');
-	let model = $state('claude-sonnet');
+	let provider = $state('');
+	let model = $state('');
 	let sharing = $state<'personal' | 'team' | 'org'>('personal');
 	let tools = $state<string[]>([]);
+	let providers = $state<Provider[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 
@@ -20,6 +24,14 @@
 		{ id: 'file_write', name: 'Write File', desc: 'Write to VM filesystem', icon: 'M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7 M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4 9.5-9.5z' },
 		{ id: 'code_interpreter', name: 'Code', desc: 'Run Python code', icon: 'M16 18l6-6-6-6M8 6l-6 6 6 6' }
 	];
+
+	onMount(async () => {
+		try {
+			providers = await listProviders();
+		} catch {
+			// non-fatal: ModelSelector will surface the empty state.
+		}
+	});
 
 	function toggleTool(id: string) {
 		if (tools.includes(id)) tools = tools.filter((t) => t !== id);
@@ -32,23 +44,16 @@
 		loading = true;
 		error = null;
 		try {
-			const agent: Agent = {
-				id: crypto.randomUUID().slice(0, 8),
+			await createAgent({
 				name: name.trim(),
 				description: description.trim(),
 				role,
 				system_prompt: systemPrompt.trim(),
 				provider,
 				model,
-				tools,
-				sharing,
-				created_by: 'local',
-				created_at: new Date().toISOString(),
-				updated_at: new Date().toISOString()
-			};
-			const existing: Agent[] = JSON.parse(localStorage.getItem('forgebox_agents') ?? '[]');
-			existing.push(agent);
-			localStorage.setItem('forgebox_agents', JSON.stringify(existing));
+				tools: JSON.stringify(tools),
+				sharing
+			});
 			goto('/agents');
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to create';
@@ -130,20 +135,7 @@
 
 			<section class="sec">
 				<span class="sec__label">Model</span>
-				<div class="sec__row">
-					<label class="fld fld--grow">
-						<span class="fld__lbl">Provider</span>
-						<select class="fld__input" bind:value={provider} disabled={loading}>
-							<option value="anthropic">Anthropic</option>
-							<option value="openai">OpenAI</option>
-							<option value="ollama">Ollama</option>
-						</select>
-					</label>
-					<label class="fld fld--grow">
-						<span class="fld__lbl">Model ID</span>
-						<input class="fld__input" type="text" bind:value={model} placeholder="claude-sonnet" disabled={loading} />
-					</label>
-				</div>
+				<ModelSelector {providers} bind:provider bind:model disabled={loading} compact />
 			</section>
 
 			<section class="sec">

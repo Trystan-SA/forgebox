@@ -40,6 +40,10 @@ const (
 // empty for built-ins loaded from config. ProviderType identifies the plugin
 // implementation (e.g. "anthropic-subscription") for DB-backed providers whose
 // Name is a user-supplied display label distinct from the type.
+//
+// Models is populated for provider entries from the plugin's Models() method,
+// in the provider's preferred display order (most powerful first). Empty for
+// non-provider plugins.
 type PluginMeta struct {
 	Name         string     `json:"name"`
 	Version      string     `json:"version"`
@@ -47,4 +51,5 @@ type PluginMeta struct {
 	Builtin      bool       `json:"builtin"`
 	ID           string     `json:"id,omitempty"`
 	ProviderType string     `json:"provider_type,omitempty"`
+	Models       []Model    `json:"models,omitempty"`
 }

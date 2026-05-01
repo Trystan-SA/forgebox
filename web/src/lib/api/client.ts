@@ -17,6 +17,7 @@ import type {
 	UpdateAutomationRequest,
 	Agent,
 	CreateAgentRequest,
+	UpdateAgentRequest,
 	App,
 	CreateAppRequest,
 	UpdateAppRequest
@@ -219,6 +220,13 @@ export async function createAgent(req: CreateAgentRequest): Promise<Agent> {
 
 export async function getAgent(id: string): Promise<Agent> {
 	return request(`/agents/${id}`);
+}
+
+export async function updateAgent(id: string, req: UpdateAgentRequest): Promise<Agent> {
+	return request(`/agents/${id}`, {
+		method: 'PUT',
+		body: JSON.stringify(req)
+	});
 }
 
 export async function deleteAgent(id: string): Promise<{ status: string }> {

@@ -1,8 +1,9 @@
 <script lang="ts">
+	import { onMount, tick } from 'svelte';
 	import { createTask, getTask } from '$lib/api/client';
 	import { currentUser } from '$lib/stores/auth';
-	import { goto } from '$app/navigation';
-	import { tick } from 'svelte';
+	import { loadProviders, providersStore } from '$lib/stores/providers.svelte';
+	import ModelSelector from '$lib/components/ModelSelector.svelte';
 
 	interface ChatMessage {
 		id: string;
@@ -12,10 +13,40 @@
 		taskId?: string;
 	}
 
+	const STORAGE_KEY = 'forgebox.chat.lastModel';
+
 	let input = $state('');
+	let provider = $state('');
+	let model = $state('');
 	let messages = $state<ChatMessage[]>([]);
 	let sending = $state(false);
 	let messagesEl: HTMLDivElement;
+
+	onMount(() => {
+		// Restore the user's last picked (provider, model) before providers
+		// arrive. If the saved pair no longer exists in the list, the
+		// ModelSelector's snap-to-default effect will fall back to the first
+		// provider's strongest model per specs/3.3.3.
+		try {
+			const saved = localStorage.getItem(STORAGE_KEY);
+			if (saved) {
+				const parsed = JSON.parse(saved);
+				if (typeof parsed?.provider === 'string' && typeof parsed?.model === 'string') {
+					provider = parsed.provider;
+					model = parsed.model;
+				}
+			}
+		} catch {
+			/* ignore malformed storage */
+		}
+		void loadProviders();
+	});
+
+	$effect(() => {
+		if (provider && model) {
+			localStorage.setItem(STORAGE_KEY, JSON.stringify({ provider, model }));
+		}
+	});
 
 	async function scrollToBottom() {
 		await tick();
@@ -88,7 +119,11 @@
 		await scrollToBottom();
 
 		try {
-			const res = await createTask({ prompt });
+			const res = await createTask({
+				prompt,
+				provider: provider || undefined,
+				model: model || undefined
+			});
 			messages[assistantIndex] = {
 				...messages[assistantIndex],
 				taskId: res.task_id,
@@ -145,53 +180,40 @@
 						</svg>
 					</button>
 				</form>
-
-				<div class="quick-actions">
-					<button class="quick-action" onclick={() => input = 'Using Claude Sonnet: '}>
-						<span class="quick-action__icon">🧠</span>
-						<span class="quick-action__label">Claude Sonnet</span>
-					</button>
-					<button class="quick-action" onclick={() => input = 'Using GPT-4o: '}>
-						<span class="quick-action__icon">⚡</span>
-						<span class="quick-action__label">GPT-4o</span>
-					</button>
-					<button class="quick-action" onclick={() => input = 'Using Ollama (local): '}>
-						<span class="quick-action__icon">🏠</span>
-						<span class="quick-action__label">Ollama Local</span>
-					</button>
-					<button class="quick-action" onclick={() => { goto('/automations'); }}>
-						<span class="quick-action__icon">🔄</span>
-						<span class="quick-action__label">Workflows</span>
-					</button>
-					<button class="quick-action" onclick={() => input = 'Run an agent that: '}>
-						<span class="quick-action__icon">🤖</span>
-						<span class="quick-action__label">Run Agent</span>
-					</button>
-					<button class="quick-action" onclick={() => input = 'Analyze this code: '}>
-						<span class="quick-action__icon">🔍</span>
-						<span class="quick-action__label">Code Review</span>
-					</button>
+				<div class="chat__model">
+					<ModelSelector providers={providersStore.providers} bind:provider bind:model disabled={sending} compact />
 				</div>
 			</div>
 		{:else}
 			{#each messages as msg}
 				<div class="msg msg--{msg.role}">
-					<div class="msg__bubble">
-						{#if msg.role === 'assistant' && msg.status === 'pending'}
-							<span class="msg__dots">
-								<span></span><span></span><span></span>
-							</span>
-						{:else if msg.role === 'assistant' && msg.status === 'running'}
-							<span class="msg__running">
-								<span class="msg__spinner"></span>
-								Running task...
-							</span>
-						{:else}
-							{msg.content}
-						{/if}
-					</div>
 					{#if msg.role === 'assistant' && msg.status === 'failed'}
-						<span class="msg__status msg__status--error">Failed</span>
+						<div class="msg__error" role="alert">
+							<div class="msg__error-head">
+								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<circle cx="12" cy="12" r="10" />
+									<line x1="12" y1="8" x2="12" y2="12" />
+									<line x1="12" y1="16" x2="12.01" y2="16" />
+								</svg>
+								<span>Task failed</span>
+							</div>
+							<pre class="msg__error-body">{msg.content}</pre>
+						</div>
+					{:else}
+						<div class="msg__bubble">
+							{#if msg.role === 'assistant' && msg.status === 'pending'}
+								<span class="msg__dots">
+									<span></span><span></span><span></span>
+								</span>
+							{:else if msg.role === 'assistant' && msg.status === 'running'}
+								<span class="msg__running">
+									<span class="msg__spinner"></span>
+									Running task...
+								</span>
+							{:else}
+								{msg.content}
+							{/if}
+						</div>
 					{/if}
 				</div>
 			{/each}
@@ -199,21 +221,26 @@
 	</div>
 
 	{#if messages.length > 0}
-		<form class="chat__input" onsubmit={handleSubmit}>
-			<textarea
-				bind:value={input}
-				onkeydown={handleKeydown}
-				placeholder="Ask a question or describe a task..."
-				rows="1"
-				disabled={sending}
-			></textarea>
-			<button type="submit" class="btn-primary" disabled={sending || !input.trim()}>
-				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-					<line x1="22" y1="2" x2="11" y2="13" />
-					<polygon points="22 2 15 22 11 13 2 9 22 2" />
-				</svg>
-			</button>
-		</form>
+		<div class="chat__footer">
+			<div class="chat__model chat__model--inline">
+				<ModelSelector providers={providersStore.providers} bind:provider bind:model disabled={sending} compact />
+			</div>
+			<form class="chat__input" onsubmit={handleSubmit}>
+				<textarea
+					bind:value={input}
+					onkeydown={handleKeydown}
+					placeholder="Ask a question or describe a task..."
+					rows="1"
+					disabled={sending}
+				></textarea>
+				<button type="submit" class="btn-primary" disabled={sending || !input.trim()}>
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<line x1="22" y1="2" x2="11" y2="13" />
+						<polygon points="22 2 15 22 11 13 2 9 22 2" />
+					</svg>
+				</button>
+			</form>
+		</div>
 	{/if}
 </div>
 
@@ -296,6 +323,34 @@
 				max-width: 600px;
 			}
 		}
+
+		&__footer {
+			display: flex;
+			flex-direction: column;
+			border-top: 1px solid $neutral-200;
+			background: $neutral-0;
+
+			.chat__input {
+				border-top: none;
+				padding-top: $space-2;
+			}
+		}
+
+		&__model {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			margin-top: $space-2;
+			width: 100%;
+			max-width: 600px;
+
+			&--inline {
+				justify-content: flex-start;
+				padding: $space-3 $space-6 0;
+				margin-top: 0;
+				max-width: none;
+			}
+		}
 	}
 
 	.msg {
@@ -331,12 +386,36 @@
 			word-break: break-word;
 		}
 
-		&__status {
-			font-size: $text-xs;
-			margin-top: $space-1;
-			padding: 0 $space-1;
+		&__error {
+			max-width: 70%;
+			padding: $space-3 $space-4;
+			background: $error-50;
+			border: 1px solid $error-100;
+			border-radius: $radius-lg;
+			color: $error-700;
+			display: flex;
+			flex-direction: column;
+			gap: $space-2;
+		}
 
-			&--error { color: $error-600; }
+		&__error-head {
+			display: flex;
+			align-items: center;
+			gap: $space-2;
+			font-size: $text-sm;
+			font-weight: $font-semibold;
+			color: $error-700;
+		}
+
+		&__error-body {
+			margin: 0;
+			padding: 0;
+			font-family: $font-mono;
+			font-size: $text-xs;
+			line-height: $leading-relaxed;
+			white-space: pre-wrap;
+			word-break: break-word;
+			color: $error-600;
 		}
 
 		&__running {
@@ -372,45 +451,6 @@
 
 			span:nth-child(2) { animation-delay: 0.2s; }
 			span:nth-child(3) { animation-delay: 0.4s; }
-		}
-	}
-
-	.quick-actions {
-		display: flex;
-		flex-wrap: wrap;
-		justify-content: center;
-		gap: $space-2;
-		margin-top: $space-5;
-		max-width: 600px;
-		width: 100%;
-	}
-
-	.quick-action {
-		display: flex;
-		align-items: center;
-		gap: $space-2;
-		padding: $space-2 $space-3;
-		background: $neutral-0;
-		border: 1px solid $neutral-200;
-		border-radius: $radius-full;
-		font-size: $text-xs;
-		font-weight: $font-medium;
-		color: $neutral-600;
-		cursor: pointer;
-		transition: all $transition-fast;
-
-		&:hover {
-			border-color: $primary-300;
-			color: $primary-700;
-			background: $primary-50;
-		}
-
-		&__icon {
-			font-size: $text-sm;
-		}
-
-		&__label {
-			white-space: nowrap;
 		}
 	}
 

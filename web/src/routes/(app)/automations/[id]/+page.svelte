@@ -111,9 +111,9 @@
 		{
 			label: 'AI',
 			items: [
-				{ type: 'aiStep', label: 'Claude', icon: '', desc: 'Anthropic Claude completion', data: { provider: 'anthropic', model: 'claude-sonnet' } },
-				{ type: 'aiStep', label: 'GPT-4o', icon: '', desc: 'OpenAI GPT-4o completion', data: { provider: 'openai', model: 'gpt-4o' } },
-				{ type: 'aiStep', label: 'Ollama', icon: '', desc: 'Local LLM via Ollama', data: { provider: 'ollama', model: 'llama3' } }
+				// AI steps start blank; the user picks provider+model per-node
+				// in the side panel via ModelSelector. See specs/3.3.3.
+				{ type: 'aiStep', label: 'AI Step', icon: '', desc: 'Run a prompt with a configured provider', data: { provider: '', model: '', prompt: '' } }
 			]
 		},
 		{

@@ -175,11 +175,33 @@ func (s *Store) migrate() error {
 		`CREATE TABLE IF NOT EXISTS providers (
 			id TEXT PRIMARY KEY,
 			type TEXT NOT NULL,
-			name TEXT NOT NULL UNIQUE,
+			name TEXT NOT NULL,
 			config_encrypted TEXT NOT NULL,
 			created_at TIMESTAMPTZ NOT NULL,
 			updated_at TIMESTAMPTZ NOT NULL
 		)`,
+		// Names are now derived from type (specs/3.1.2). Drop the legacy
+		// per-row UNIQUE on name and enforce one row per type instead.
+		`ALTER TABLE providers DROP CONSTRAINT IF EXISTS providers_name_key`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS providers_type_unique ON providers(type)`,
+
+		`CREATE TABLE IF NOT EXISTS agents (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			role TEXT NOT NULL DEFAULT 'worker',
+			system_prompt TEXT NOT NULL DEFAULT '',
+			provider TEXT NOT NULL DEFAULT '',
+			model TEXT NOT NULL DEFAULT '',
+			tools TEXT NOT NULL DEFAULT '[]',
+			sharing TEXT NOT NULL DEFAULT 'personal',
+			team_id TEXT,
+			created_by TEXT NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL,
+			updated_at TIMESTAMPTZ NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_agents_user ON agents(created_by)`,
+		`CREATE INDEX IF NOT EXISTS idx_agents_team ON agents(team_id)`,
 
 		// --- Brain tables ---
 

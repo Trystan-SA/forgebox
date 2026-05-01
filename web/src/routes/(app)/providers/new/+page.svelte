@@ -15,10 +15,14 @@
 		showBaseUrl: boolean;
 	};
 
+	// Labels here mirror the canonical labels in
+	// internal/plugins/labels.go — the gateway derives the display name
+	// from the type, so what you pick on the left is what you'll see in
+	// the model selector.
 	const providerOptions: ProviderOption[] = [
 		{
 			value: 'anthropic-api',
-			label: 'Anthropic',
+			label: 'Anthropic (API)',
 			placeholder: 'sk-ant-api-...',
 			credentialLabel: 'API Key',
 			credentialField: 'api_key',
@@ -26,7 +30,7 @@
 		},
 		{
 			value: 'anthropic-subscription',
-			label: 'Claude Subscription',
+			label: 'Anthropic (Subscription)',
 			placeholder: 'sk-ant-oat01-...',
 			credentialLabel: 'OAuth Setup Token',
 			credentialField: 'token',
@@ -52,16 +56,13 @@
 	];
 
 	let type = $state<ProviderType>('anthropic-api');
-	let name = $state('');
 	let apiKey = $state('');
 	let baseUrl = $state('');
 	let saving = $state(false);
 
 	const selected = $derived(providerOptions.find((p) => p.value === type)!);
 	const canSave = $derived(
-		name.trim().length > 0 &&
-			(selected.credentialField === null || apiKey.trim().length > 0) &&
-			!saving
+		(selected.credentialField === null || apiKey.trim().length > 0) && !saving
 	);
 
 	async function handleSubmit(e: Event) {
@@ -76,11 +77,7 @@
 			if (baseUrl.trim()) {
 				config.base_url = baseUrl.trim();
 			}
-			await createProvider({
-				type,
-				name: name.trim(),
-				config
-			});
+			await createProvider({ type, config });
 			await refreshProviders();
 			pushToast('Provider added', 'success');
 			goto('/settings?tab=providers');
@@ -121,18 +118,6 @@
 		</section>
 
 		<section class="sec">
-			<label class="fld">
-				<span class="fld__lbl">Display Name</span>
-				<input
-					class="fld__input"
-					type="text"
-					bind:value={name}
-					placeholder="e.g. Production Anthropic"
-					required
-					disabled={saving}
-				/>
-			</label>
-
 			{#if selected.credentialField}
 				<label class="fld">
 					<span class="fld__lbl">{selected.credentialLabel}</span>

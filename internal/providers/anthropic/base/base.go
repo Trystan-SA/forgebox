@@ -86,10 +86,18 @@ func (p *Provider) BuildRequest(req *sdk.CompletionRequest) *Request {
 
 	tools := make([]Tool, 0, len(req.Tools))
 	for _, t := range req.Tools {
+		// Anthropic rejects tools whose input_schema is missing or not a
+		// valid object schema (HTTP 400 "tools.0.custom.input_schema: Input
+		// does not match the expected shape"). Fall back to a valid
+		// empty-object schema when the plugin didn't supply one.
+		schema := t.InputSchema
+		if schema == nil {
+			schema = map[string]any{"type": "object", "properties": map[string]any{}}
+		}
 		tools = append(tools, Tool{
 			Name:        t.Name,
 			Description: t.Description,
-			InputSchema: t.InputSchema,
+			InputSchema: schema,
 		})
 	}
 

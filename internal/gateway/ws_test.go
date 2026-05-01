@@ -12,7 +12,7 @@ import (
 	"github.com/forgebox/forgebox/internal/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"nhooyr.io/websocket"
+	"github.com/coder/websocket"
 )
 
 func newTestWSServer(t *testing.T) (*httptest.Server, *events.Bus, *Hub) {
@@ -37,8 +37,11 @@ func dialWS(t *testing.T, url string) *websocket.Conn {
 	wsURL := "ws" + strings.TrimPrefix(url, "http")
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
 	require.NoError(t, err)
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	return conn
 }
 
@@ -65,7 +68,7 @@ func readJSON(t *testing.T, conn *websocket.Conn, timeout time.Duration) outboun
 func TestWS_AuthOkAndEventDelivery(t *testing.T) {
 	ts, bus, hub := newTestWSServer(t)
 	conn := dialWS(t, ts.URL)
-	defer conn.Close(websocket.StatusNormalClosure, "")
+	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "") }()
 
 	writeJSONToWS(t, conn, map[string]any{
 		"type":    "auth",
@@ -95,7 +98,7 @@ func TestWS_AuthOkAndEventDelivery(t *testing.T) {
 func TestWS_RejectsMissingToken(t *testing.T) {
 	ts, _, _ := newTestWSServer(t)
 	conn := dialWS(t, ts.URL)
-	defer conn.Close(websocket.StatusNormalClosure, "")
+	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "") }()
 
 	writeJSONToWS(t, conn, map[string]any{
 		"type":    "auth",
@@ -115,7 +118,7 @@ func TestWS_RejectsMissingToken(t *testing.T) {
 func TestWS_RejectsNonAuthFirstMessage(t *testing.T) {
 	ts, _, _ := newTestWSServer(t)
 	conn := dialWS(t, ts.URL)
-	defer conn.Close(websocket.StatusNormalClosure, "")
+	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "") }()
 
 	writeJSONToWS(t, conn, map[string]any{"type": "pong"})
 

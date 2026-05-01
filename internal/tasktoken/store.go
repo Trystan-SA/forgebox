@@ -6,6 +6,7 @@ package tasktoken
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -19,6 +20,9 @@ type entry struct {
 }
 
 // Store holds live task tokens in memory. Safe for concurrent use.
+//
+// Memory hygiene depends on the engine calling Revoke at task end; expired
+// entries accumulate in the map until they are explicitly revoked.
 type Store struct {
 	mu sync.RWMutex
 	m  map[string]entry
@@ -32,7 +36,9 @@ func NewStore() *Store {
 // Issue mints a fresh token bound to (userID, taskID) that expires after ttl.
 func (s *Store) Issue(userID, taskID string, ttl time.Duration) string {
 	var raw [32]byte
-	_, _ = rand.Read(raw[:])
+	if _, err := rand.Read(raw[:]); err != nil {
+		panic(fmt.Errorf("tasktoken: crypto/rand: %w", err))
+	}
 	tok := Prefix + base64.RawURLEncoding.EncodeToString(raw[:])
 	s.mu.Lock()
 	s.m[tok] = entry{

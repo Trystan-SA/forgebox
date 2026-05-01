@@ -430,7 +430,7 @@ func (s *Server) handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 	}
 	// Also conflict with a registry-name collision (e.g. a built-in keyed
 	// under the same label as the derived one).
-	if _, err := s.registry.GetProvider(label); err == nil {
+	if _, regErr := s.registry.GetProvider(label); regErr == nil {
 		writeError(w, http.StatusConflict, fmt.Sprintf("provider %q already in use", label))
 		return
 	}

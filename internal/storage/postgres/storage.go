@@ -617,11 +617,9 @@ func (s *Store) DeleteAgent(ctx context.Context, id string) error {
 func (s *Store) ListAgents(ctx context.Context, filter sdk.AgentFilter) ([]*sdk.AgentRecord, error) {
 	query := `SELECT id, name, description, role, system_prompt, provider, model, tools, sharing, team_id, created_by, created_at, updated_at FROM agents WHERE 1=1`
 	args := []any{}
-	i := 1
 	if filter.UserID != "" {
-		query += fmt.Sprintf(` AND (created_by = $%d OR sharing = 'org' OR (sharing = 'team' AND team_id IN (SELECT team_ids FROM users WHERE id = $%d)))`, i, i)
+		query += ` AND (created_by = $1 OR sharing = 'org' OR (sharing = 'team' AND team_id IN (SELECT team_ids FROM users WHERE id = $1)))`
 		args = append(args, filter.UserID)
-		i++
 	}
 	query += " ORDER BY updated_at DESC"
 	if filter.Limit > 0 {

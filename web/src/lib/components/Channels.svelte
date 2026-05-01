@@ -7,12 +7,9 @@
 	];
 </script>
 
-<div class="page">
-	<div class="page__header">
-		<h1>Channels</h1>
-		<p>Configure input channels for receiving tasks</p>
-	</div>
-
+<section class="section">
+	<h2>Channels</h2>
+	<p class="section__hint">Configure input channels for receiving tasks</p>
 	<div class="grid">
 		{#each channels as channel}
 			<div class="channel-card">
@@ -26,15 +23,16 @@
 			</div>
 		{/each}
 	</div>
-</div>
+</section>
 
 <style lang="scss">
-	.page {
-		&__header {
-			margin-bottom: $space-8;
+	.section {
+		h2 { margin-bottom: $space-4; }
 
-			h1 { font-size: $text-2xl; font-weight: $font-bold; color: $neutral-900; }
-			p { margin-top: $space-1; font-size: $text-sm; color: $neutral-500; }
+		&__hint {
+			margin: -$space-2 0 $space-4;
+			font-size: $text-sm;
+			color: $neutral-500;
 		}
 	}
 

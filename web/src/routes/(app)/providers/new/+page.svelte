@@ -83,7 +83,7 @@
 			});
 			await refreshProviders();
 			pushToast('Provider added', 'success');
-			goto('/providers');
+			goto('/settings?tab=providers');
 		} catch (err) {
 			pushToast(err instanceof Error ? err.message : 'Failed to save', 'error', 5000);
 			saving = false;

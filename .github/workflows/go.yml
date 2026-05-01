@@ -19,9 +19,11 @@ on:
       - "Makefile"
       - ".github/workflows/go.yml"
 
-# Cancel superseded runs on the same ref to avoid burning minutes on stale commits.
+# Cancel superseded runs. PR number is used as the group key so that a push
+# to a PR branch and the pull_request event for the same commit share one slot
+# and the older run is cancelled. Falls back to ref for direct pushes to main.
 concurrency:
-  group: go-${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:

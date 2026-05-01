@@ -15,10 +15,25 @@ import (
 	"github.com/forgebox/forgebox/internal/permissions"
 	"github.com/forgebox/forgebox/internal/plugins"
 	"github.com/forgebox/forgebox/internal/sessions"
+	"github.com/forgebox/forgebox/internal/tasktoken"
 	"github.com/forgebox/forgebox/internal/vm"
 	"github.com/forgebox/forgebox/pkg/sdk"
 	"github.com/google/uuid"
 )
+
+// managementToolNames is the set of in-VM tools that need an authenticated
+// callback to the gateway. The engine consults this on every task to decide
+// whether to grant ControlPlaneAccess and inject the API token. Keep in sync
+// with internal/plugins/management.go and specs/5.0.0-management-tools.md §5.1.0.
+var managementToolNames = map[string]bool{
+	"list_agents":              true,
+	"get_agent":                true,
+	"create_agent":             true,
+	"update_agent":             true,
+	"delete_agent":             true,
+	"list_providers":           true,
+	"list_models_for_provider": true,
+}
 
 // Config holds the dependencies for the engine.
 type Config struct {
@@ -26,6 +41,8 @@ type Config struct {
 	Orchestrator *vm.Orchestrator
 	Permissions  *permissions.Checker
 	Sessions     *sessions.Manager
+	TaskTokens   *tasktoken.Store // optional; nil disables token issuance for one-shot CLI mode
+	APIBaseURL   string           // gateway base URL injected as FORGEBOX_API_URL (e.g. "http://127.0.0.1:8420")
 }
 
 // Engine executes AI tasks by running the LLM tool-call loop.
@@ -34,6 +51,8 @@ type Engine struct {
 	orchestrator *vm.Orchestrator
 	permissions  *permissions.Checker
 	sessions     *sessions.Manager
+	taskTokens   *tasktoken.Store
+	apiBaseURL   string
 }
 
 // New creates a new Engine with the given configuration.
@@ -43,6 +62,8 @@ func New(cfg Config) *Engine {
 		orchestrator: cfg.Orchestrator,
 		permissions:  cfg.Permissions,
 		sessions:     cfg.Sessions,
+		taskTokens:   cfg.TaskTokens,
+		apiBaseURL:   cfg.APIBaseURL,
 	}
 }
 
@@ -107,12 +128,35 @@ func (e *Engine) Run(ctx context.Context, task *Task) (*Result, error) {
 		toolDefs[i] = sdk.ToolDef(t.Schema())
 	}
 
+	apiToken := ""
+	if e.taskTokens != nil {
+		ttl := task.Timeout
+		if ttl <= 0 {
+			ttl = 30 * time.Minute // sane default; aligns with VM default timeout
+		}
+		apiToken = e.taskTokens.Issue(task.UserID, task.ID, ttl)
+		defer e.taskTokens.Revoke(apiToken)
+	}
+
+	controlPlane := false
+	for _, t := range tools {
+		if managementToolNames[t.Schema().Name] {
+			controlPlane = true
+			break
+		}
+	}
+
 	// Boot a VM for this task.
 	vmID, err := e.orchestrator.Allocate(ctx, &vm.AllocRequest{
-		MemoryMB:      task.MemoryMB,
-		VCPUs:         task.VCPUs,
-		Timeout:       task.Timeout,
-		NetworkAccess: task.NetworkAccess,
+		MemoryMB:           task.MemoryMB,
+		VCPUs:              task.VCPUs,
+		Timeout:            task.Timeout,
+		NetworkAccess:      task.NetworkAccess,
+		ControlPlaneAccess: controlPlane,
+		EnvVars: map[string]string{
+			"FORGEBOX_API_URL":   e.apiBaseURL,
+			"FORGEBOX_API_TOKEN": apiToken,
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("allocate VM: %w", err)

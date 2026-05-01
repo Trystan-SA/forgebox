@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -161,19 +162,28 @@ func cmdServe() error {
 	sessionMgr := sessions.NewManager(store)
 	permChecker := permissions.NewChecker(cfg.Auth, store)
 
+	// Task tokens are issued by the engine (Task 8) for in-VM tool callbacks
+	// and resolved by the gateway's userID() to the originating user. Keep
+	// the same store on both sides — do not inline.
+	taskTokens := tasktoken.NewStore()
+
+	// Listen of the form ":8420" means "all interfaces"; expose it as 127.0.0.1
+	// so VMs on the same host can reach the gateway.
+	apiBaseURL := "http://" + cfg.Server.Listen
+	if strings.HasPrefix(cfg.Server.Listen, ":") {
+		apiBaseURL = "http://127.0.0.1" + cfg.Server.Listen
+	}
+
 	eng := engine.New(engine.Config{
 		Registry:     registry,
 		Orchestrator: orch,
 		Permissions:  permChecker,
 		Sessions:     sessionMgr,
+		TaskTokens:   taskTokens,
+		APIBaseURL:   apiBaseURL,
 	})
 
 	bus := events.New(0)
-
-	// Task tokens are issued by the engine (Task 8) for in-VM tool callbacks
-	// and resolved by the gateway's userID() to the originating user. Keep
-	// the same store on both sides — do not inline.
-	taskTokens := tasktoken.NewStore()
 
 	srv := gateway.New(gateway.Config{
 		ListenAddr:     cfg.Server.Listen,
@@ -274,6 +284,8 @@ func cmdRun() error {
 	defer func() { _ = store.Close() }()
 	defer orch.Shutdown(ctx)
 
+	// One-shot mode: no gateway server, so management tools and task tokens
+	// are unavailable. Engine.Run skips token issuance when TaskTokens is nil.
 	eng := engine.New(engine.Config{
 		Registry:     registry,
 		Orchestrator: orch,

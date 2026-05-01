@@ -257,7 +257,6 @@ type AgentRecord struct {
 	ID           string    `json:"id"`
 	Name         string    `json:"name"`
 	Description  string    `json:"description"`
-	Role         string    `json:"role"` // "worker" or "orchestrator"
 	SystemPrompt string    `json:"system_prompt"`
 	Provider     string    `json:"provider"`
 	Model        string    `json:"model"`

@@ -128,13 +128,16 @@ func (e *Engine) Run(ctx context.Context, task *Task) (*Result, error) {
 		toolDefs[i] = sdk.ToolDef(t.Schema())
 	}
 
+	// If the task didn't specify a timeout, adopt the orchestrator's default
+	// up-front so the VM, the API token, and any downstream lifetime all agree
+	// (spec 5.3.0: token lifetime is bounded by the task timeout).
+	if task.Timeout <= 0 {
+		task.Timeout = e.orchestrator.DefaultTimeout()
+	}
+
 	apiToken := ""
 	if e.taskTokens != nil {
-		ttl := task.Timeout
-		if ttl <= 0 {
-			ttl = 30 * time.Minute // sane default; aligns with VM default timeout
-		}
-		apiToken = e.taskTokens.Issue(task.UserID, task.ID, ttl)
+		apiToken = e.taskTokens.Issue(task.UserID, task.ID, task.Timeout)
 		defer e.taskTokens.Revoke(apiToken)
 	}
 

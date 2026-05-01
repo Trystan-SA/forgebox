@@ -247,6 +247,13 @@ func (o *Orchestrator) Status() (poolSize, activeCount int) {
 	return len(o.pool), len(o.active)
 }
 
+// DefaultTimeout returns the configured default per-task timeout. Engines
+// can use this to align their own resource lifetimes with the VM lifetime
+// when a task does not specify a timeout explicitly.
+func (o *Orchestrator) DefaultTimeout() time.Duration {
+	return o.cfg.DefaultTimeout
+}
+
 // --- Firecracker internals (only used when mode == "firecracker") ---
 
 func (o *Orchestrator) bootVM(ctx context.Context, req *AllocRequest) (*VM, error) {

@@ -51,6 +51,11 @@ type Config struct {
 	// originating user. Optional; when nil, fbtask_-prefixed bearer tokens
 	// resolve as invalid (empty user id → 401-eligible).
 	TaskTokens *tasktoken.Store
+	// Approvals is the registry that the engine Registers/Awaits on for
+	// destructive-action approvals; the gateway WebSocket handler Resolves
+	// it when the dashboard sends a "tool_approval" message. Optional;
+	// when nil, inbound tool_approval messages are dropped (one-shot mode).
+	Approvals *engine.Approvals
 }
 
 // Server is the main ForgeBox API server.
@@ -66,6 +71,7 @@ type Server struct {
 	secretBox    *fbcrypto.SecretBox
 	hub          *Hub
 	taskTokens   *tasktoken.Store
+	approvals    *engine.Approvals
 }
 
 // New creates a new gateway server. The event bus must be supplied; the
@@ -86,6 +92,7 @@ func New(cfg Config) *Server {
 		secretBox:    cfg.SecretBox,
 		hub:          NewHub(cfg.Events, 0),
 		taskTokens:   cfg.TaskTokens,
+		approvals:    cfg.Approvals,
 	}
 	s.registerRoutes()
 	return s

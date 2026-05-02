@@ -203,6 +203,7 @@ func cmdServe() error {
 		SecretBox:      secretBox,
 		Events:         bus,
 		TaskTokens:     taskTokens,
+		Approvals:      approvals,
 	})
 
 	slog.Info("starting ForgeBox",

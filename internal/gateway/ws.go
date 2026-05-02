@@ -32,6 +32,13 @@ type authPayload struct {
 	Token string `json:"token"`
 }
 
+// approvalPayload is the body shape of an inbound "tool_approval" message
+// from the dashboard.
+type approvalPayload struct {
+	ApprovalID string `json:"approval_id"`
+	Decision   string `json:"decision"` // "approve" or "deny"
+}
+
 // handleWS upgrades an HTTP request to a WebSocket, performs the first-message
 // auth handshake, registers the client with the hub, and runs read/write
 // loops until the connection closes.
@@ -64,6 +71,24 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	client := s.hub.register(userID)
 	defer s.hub.unregister(client)
 
+	// onMsg routes non-pong inbound frames. Today the only message we
+	// understand here is "tool_approval" from the dashboard.
+	onMsg := func(msg inboundMessage) {
+		switch msg.Type {
+		case "tool_approval":
+			if s.approvals == nil {
+				return
+			}
+			var p approvalPayload
+			if err := json.Unmarshal(msg.Payload, &p); err != nil {
+				slog.Info("ws: bad tool_approval payload", "error", err)
+				return
+			}
+			approved := p.Decision == "approve"
+			s.approvals.Resolve(p.ApprovalID, approved)
+		}
+	}
+
 	// pongReceived is touched by the read loop; the ping loop reads it. Use
 	// an atomic so we don't need a mutex for one nanosecond timestamp.
 	var lastPong atomic.Int64
@@ -77,7 +102,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	readErr := make(chan error, 1)
 	writeErr := make(chan error, 1)
 
-	go func() { readErr <- wsReadLoop(loopCtx, conn, &lastPong) }()
+	go func() { readErr <- wsReadLoop(loopCtx, conn, &lastPong, onMsg) }()
 	go func() { writeErr <- wsWriteLoop(loopCtx, conn, client.send, &lastPong) }()
 
 	select {
@@ -123,9 +148,10 @@ func wsAuthenticate(ctx context.Context, conn *websocket.Conn) (string, error) {
 	return "tok:" + token, nil
 }
 
-// wsReadLoop consumes inbound messages, updating lastPong on pong messages.
-// Any non-recoverable read error returns and ends the connection.
-func wsReadLoop(ctx context.Context, conn *websocket.Conn, lastPong *atomic.Int64) error {
+// wsReadLoop consumes inbound messages, updating lastPong on pong messages
+// and dispatching everything else through onMsg. Any non-recoverable read
+// error returns and ends the connection.
+func wsReadLoop(ctx context.Context, conn *websocket.Conn, lastPong *atomic.Int64, onMsg func(inboundMessage)) error {
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
@@ -133,11 +159,15 @@ func wsReadLoop(ctx context.Context, conn *websocket.Conn, lastPong *atomic.Int6
 		}
 		var msg inboundMessage
 		if err := json.Unmarshal(data, &msg); err != nil {
-			// Tolerate malformed frames; the spec only defines pong today.
+			// Tolerate malformed frames; the spec only defines pong + tool_approval today.
 			continue
 		}
 		if msg.Type == "pong" {
 			lastPong.Store(time.Now().UnixNano())
+			continue
+		}
+		if onMsg != nil {
+			onMsg(msg)
 		}
 	}
 }

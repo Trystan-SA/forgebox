@@ -2,6 +2,7 @@
 	import type { TaskEvent } from '$lib/api/types';
 	import ToolApprovalCard from '$lib/components/ToolApprovalCard.svelte';
 	import { sendMessage } from '$lib/stores/socket.svelte';
+	import { renderMarkdown } from '$lib/utils/markdown';
 
 	interface Props {
 		events: TaskEvent[];
@@ -28,6 +29,30 @@
 			}
 		}
 		return acc;
+	});
+
+	type RenderedItem =
+		| { kind: 'prose'; html: string }
+		| { kind: 'event'; event: TaskEvent };
+
+	const renderedItems = $derived.by<RenderedItem[]>(() => {
+		const out: RenderedItem[] = [];
+		let proseBuf = '';
+		for (const ev of events) {
+			if (ev.type === 'text_delta') {
+				proseBuf += ev.text ?? '';
+				continue;
+			}
+			if (proseBuf.length > 0) {
+				out.push({ kind: 'prose', html: renderMarkdown(proseBuf) });
+				proseBuf = '';
+			}
+			out.push({ kind: 'event', event: ev });
+		}
+		if (proseBuf.length > 0) {
+			out.push({ kind: 'prose', html: renderMarkdown(proseBuf) });
+		}
+		return out;
 	});
 
 	function handleApproval(decision: 'approve' | 'deny', approvalId: string) {
@@ -58,43 +83,43 @@
 		</div>
 
 		<div class="stream__body" bind:this={container}>
-			{#each events as event}
-				{#if event.type === 'text_delta'}
-					<span class="stream__text">{event.text}</span>
-				{:else if event.type === 'tool_call'}
+			{#each renderedItems as item}
+				{#if item.kind === 'prose'}
+					<div class="stream__prose">{@html item.html}</div>
+				{:else if item.event.type === 'tool_call'}
 					<div class="stream__tool">
 						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 							<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
 						</svg>
 						<div>
-							<span class="stream__tool-name">{event.tool_call?.name}</span>
-							<pre class="stream__tool-input">{event.tool_call?.input}</pre>
+							<span class="stream__tool-name">{item.event.tool_call?.name}</span>
+							<pre class="stream__tool-input">{item.event.tool_call?.input}</pre>
 						</div>
 					</div>
-				{:else if event.type === 'tool_result'}
-					<div class="stream__result" class:stream__result--error={event.result?.is_error}>
-						{event.result?.content}
+				{:else if item.event.type === 'tool_result'}
+					<div class="stream__result" class:stream__result--error={item.event.result?.is_error}>
+						{item.event.result?.content}
 					</div>
-				{:else if event.type === 'tool_pending_approval'}
+				{:else if item.event.type === 'tool_pending_approval'}
 					<div class="stream__approval">
 						<ToolApprovalCard
-							toolName={event.tool_call?.name ?? 'unknown'}
-							inputArgs={event.tool_call ? safeJSONParse(event.tool_call.input) : {}}
-							approvalId={event.approval_id ?? ''}
-							resolved={event.approval_id ? resolutions[event.approval_id] ?? null : null}
+							toolName={item.event.tool_call?.name ?? 'unknown'}
+							inputArgs={item.event.tool_call ? safeJSONParse(item.event.tool_call.input) : {}}
+							approvalId={item.event.approval_id ?? ''}
+							resolved={item.event.approval_id ? resolutions[item.event.approval_id] ?? null : null}
 							onresolve={handleApproval}
 						/>
 					</div>
-				{:else if event.type === 'tool_approval_resolved'}
+				{:else if item.event.type === 'tool_approval_resolved'}
 					<!-- Resolution is reflected via the resolutions store on the matching pending event; nothing to render here. -->
-				{:else if event.type === 'error'}
+				{:else if item.event.type === 'error'}
 					<div class="stream__error">
 						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 							<circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
 						</svg>
-						{event.error}
+						{item.event.error}
 					</div>
-				{:else if event.type === 'done'}
+				{:else if item.event.type === 'done'}
 					<div class="stream__done">Task completed</div>
 				{/if}
 			{/each}
@@ -149,11 +174,6 @@
 			padding: $space-4;
 			font-family: $font-mono;
 			font-size: $text-sm;
-		}
-
-		&__text {
-			color: $neutral-100;
-			white-space: pre-wrap;
 		}
 
 		&__tool {

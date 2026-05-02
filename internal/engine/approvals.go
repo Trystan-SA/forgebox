@@ -29,17 +29,17 @@ func NewApprovals() *Approvals {
 // Register allocates an id and channel for a new pending approval. The
 // channel is buffered (cap 1) so Resolve never blocks even if Await has not
 // reached its select yet.
-func (a *Approvals) Register() (string, <-chan bool) {
+func (a *Approvals) Register() (id string, ch <-chan bool) {
 	var raw [12]byte
 	if _, err := rand.Read(raw[:]); err != nil {
 		panic(fmt.Errorf("approvals: crypto/rand: %w", err))
 	}
-	id := base64.RawURLEncoding.EncodeToString(raw[:])
-	ch := make(chan bool, 1)
+	id = base64.RawURLEncoding.EncodeToString(raw[:])
+	buf := make(chan bool, 1)
 	a.mu.Lock()
-	a.m[id] = ch
+	a.m[id] = buf
 	a.mu.Unlock()
-	return id, ch
+	return id, buf
 }
 
 // Resolve delivers the user's decision to the waiter and removes the entry.

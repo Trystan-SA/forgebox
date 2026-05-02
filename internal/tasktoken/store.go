@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+// Prefix is the opaque-token prefix that distinguishes a ForgeBox task token
+// from other bearer tokens accepted by the gateway.
 const Prefix = "fbtask_"
 
 type entry struct {
@@ -51,11 +53,11 @@ func (s *Store) Issue(userID, taskID string, ttl time.Duration) string {
 }
 
 // Resolve returns the bound (userID, taskID) if the token is known and unexpired.
-func (s *Store) Resolve(tok string) (string, string, bool) {
+func (s *Store) Resolve(tok string) (userID, taskID string, ok bool) {
 	s.mu.RLock()
-	e, ok := s.m[tok]
+	e, found := s.m[tok]
 	s.mu.RUnlock()
-	if !ok || time.Now().After(e.expiresAt) {
+	if !found || time.Now().After(e.expiresAt) {
 		return "", "", false
 	}
 	return e.userID, e.taskID, true

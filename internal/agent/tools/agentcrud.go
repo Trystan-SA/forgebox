@@ -33,10 +33,11 @@ func newAgentAPIClient() (*agentAPIClient, error) {
 	}, nil
 }
 
-func (c *agentAPIClient) do(ctx context.Context, method, path string, body any) ([]byte, int, error) {
+func (c *agentAPIClient) do(ctx context.Context, method, path string, body any) (respBody []byte, status int, err error) {
 	var buf io.Reader
 	if body != nil {
-		b, err := json.Marshal(body)
+		var b []byte
+		b, err = json.Marshal(body)
 		if err != nil {
 			return nil, 0, fmt.Errorf("marshal body: %w", err)
 		}
@@ -58,9 +59,9 @@ func (c *agentAPIClient) do(ctx context.Context, method, path string, body any) 
 		// today, but be defensive.
 		return nil, 0, fmt.Errorf("api call %s %s: transport error", method, path)
 	}
-	defer resp.Body.Close()
-	out, _ := io.ReadAll(resp.Body)
-	return out, resp.StatusCode, nil
+	defer func() { _ = resp.Body.Close() }()
+	respBody, _ = io.ReadAll(resp.Body)
+	return respBody, resp.StatusCode, nil
 }
 
 // ListAgentsTool returns the agents visible to the calling user.
@@ -126,7 +127,7 @@ func (t *CreateAgentTool) Execute(ctx context.Context, input json.RawMessage) (*
 	if err != nil {
 		return &Result{Content: err.Error(), IsError: true}, nil
 	}
-	body, status, err := c.do(ctx, http.MethodPost, "/api/v1/agents", json.RawMessage(input))
+	body, status, err := c.do(ctx, http.MethodPost, "/api/v1/agents", input)
 	if err != nil {
 		return &Result{Content: err.Error(), IsError: true}, nil
 	}

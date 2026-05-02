@@ -14,8 +14,11 @@ import (
 // Use ListModelsForProviderTool to fetch the model catalog for one provider.
 type ListProvidersTool struct{}
 
+// Name returns the tool identifier.
 func (t *ListProvidersTool) Name() string { return "list_providers" }
 
+// Execute calls GET /api/v1/providers and returns a slim per-provider summary
+// (name, provider_type, builtin) without the model catalog.
 func (t *ListProvidersTool) Execute(ctx context.Context, input json.RawMessage) (*Result, error) {
 	c, err := newAgentAPIClient()
 	if err != nil {
@@ -50,8 +53,11 @@ func (t *ListProvidersTool) Execute(ctx context.Context, input json.RawMessage) 
 // registry key (the same value `list_providers` returns under "name").
 type ListModelsForProviderTool struct{}
 
+// Name returns the tool identifier.
 func (t *ListModelsForProviderTool) Name() string { return "list_models_for_provider" }
 
+// Execute returns the model catalog for the named provider, in
+// most-powerful-first order.
 func (t *ListModelsForProviderTool) Execute(ctx context.Context, input json.RawMessage) (*Result, error) {
 	var args struct {
 		Provider string `json:"provider"`

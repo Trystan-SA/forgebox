@@ -74,19 +74,19 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	// onMsg routes non-pong inbound frames. Today the only message we
 	// understand here is "tool_approval" from the dashboard.
 	onMsg := func(msg inboundMessage) {
-		switch msg.Type {
-		case "tool_approval":
-			if s.approvals == nil {
-				return
-			}
-			var p approvalPayload
-			if err := json.Unmarshal(msg.Payload, &p); err != nil {
-				slog.Info("ws: bad tool_approval payload", "error", err)
-				return
-			}
-			approved := p.Decision == "approve"
-			s.approvals.Resolve(p.ApprovalID, approved)
+		if msg.Type != "tool_approval" {
+			return
 		}
+		if s.approvals == nil {
+			return
+		}
+		var p approvalPayload
+		if err := json.Unmarshal(msg.Payload, &p); err != nil {
+			slog.Info("ws: bad tool_approval payload", "error", err)
+			return
+		}
+		approved := p.Decision == "approve"
+		s.approvals.Resolve(p.ApprovalID, approved)
 	}
 
 	// pongReceived is touched by the read loop; the ping loop reads it. Use

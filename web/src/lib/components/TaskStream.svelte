@@ -244,6 +244,99 @@
 			background: $neutral-400;
 			animation: pulse 1s ease-in-out infinite;
 		}
+
+		&__prose {
+			color: $neutral-100;
+			font-family: $font-sans;
+			font-size: $text-sm;
+			line-height: 1.55;
+			word-break: break-word;
+
+			p {
+				margin: 0 0 $space-2 0;
+			}
+
+			h1,
+			h2,
+			h3 {
+				margin: $space-3 0 $space-2 0;
+				color: $neutral-50;
+				font-weight: $font-semibold;
+				line-height: 1.3;
+			}
+
+			h1 {
+				font-size: $text-lg;
+			}
+
+			h2 {
+				font-size: $text-base;
+			}
+
+			h3 {
+				font-size: $text-sm;
+			}
+
+			ul,
+			ol {
+				margin: 0 0 $space-2 $space-4;
+				padding: 0;
+			}
+
+			li {
+				margin: $space-1 0;
+			}
+
+			strong {
+				color: $neutral-0;
+				font-weight: $font-semibold;
+			}
+
+			em {
+				font-style: italic;
+			}
+
+			code {
+				padding: 0 $space-1;
+				border-radius: $radius-sm;
+				background: $neutral-800;
+				color: $primary-200;
+				font-family: $font-mono;
+				font-size: 0.9em;
+			}
+
+			pre {
+				margin: $space-2 0;
+				padding: $space-2;
+				border: 1px solid $neutral-700;
+				border-radius: $radius-md;
+				background: $neutral-800;
+				overflow-x: auto;
+
+				code {
+					padding: 0;
+					background: transparent;
+					color: $neutral-100;
+					font-size: $text-xs;
+				}
+			}
+
+			a {
+				color: $primary-300;
+				text-decoration: underline;
+
+				&:hover {
+					color: $primary-200;
+				}
+			}
+
+			blockquote {
+				margin: $space-2 0;
+				padding-left: $space-3;
+				border-left: 3px solid $neutral-600;
+				color: $neutral-300;
+			}
+		}
 	}
 
 	@keyframes pulse {

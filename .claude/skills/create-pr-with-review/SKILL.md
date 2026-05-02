@@ -45,9 +45,27 @@ For monorepos with both backend and frontend changes (e.g. Go + web/), run both 
 
 ### Step 2 — Run pre-flight checks
 
-Run lint → build → test. Stop on the first failure.
+Run lint → build → test. Stop on the first failure that can't be auto-fixed.
 
-If any check fails:
+**Lint failures — try auto-fix first:**
+
+When lint fails, classify the failure before stopping:
+
+1. **Auto-fixable code issues** (formatting, unused imports, simple style violations): re-run with the linter's fix flag.
+   - ESLint: `npm run lint -- --fix` or `npx eslint . --fix`
+   - Ruff: `ruff check --fix`
+   - golangci-lint: `golangci-lint run --fix ./...`
+   - gofumpt / gofmt: `gofumpt -w .` / `gofmt -w .`
+
+   After auto-fix, stage the modified files in a separate fixup commit (`style: auto-fix lint`) and re-run lint to confirm clean. If auto-fix changes files, do not silently fold them into an existing commit — they belong in their own commit so the diff is auditable.
+
+2. **Environmental failures** (missing binary, missing module, broken install, version mismatch): the lint tool itself is broken, not the code. Note it explicitly, skip lint for this run, and proceed to build / test. Surface this in the final summary as "lint skipped — <reason>".
+
+3. **Unfixable code issues** (rule violations the autofixer can't resolve, e.g. type errors masquerading as lint, logic-level rules): show the actionable lines and STOP. Wait for user.
+
+**Build / test failures — never auto-fix.** Stop and report.
+
+If a check stops the run:
 - Show which check failed and the relevant error output (truncate to the actionable lines).
 - **STOP**. Do not push. Do not open the PR.
 - Wait for the user to fix or override.

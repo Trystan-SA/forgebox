@@ -123,6 +123,8 @@ export type TaskEventType =
 	| 'text_delta'
 	| 'tool_call'
 	| 'tool_result'
+	| 'tool_pending_approval'
+	| 'tool_approval_resolved'
 	| 'error'
 	| 'done';
 
@@ -133,6 +135,8 @@ export interface TaskEvent {
 	result?: ToolResult;
 	error?: string;
 	status?: TaskStatus;
+	approval_id?: string;
+	approved?: boolean;
 }
 
 export interface VMPoolStatus {

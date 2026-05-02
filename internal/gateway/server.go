@@ -300,7 +300,47 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	// dashboard's poll converges on completed/failed.
 	go func() {
 		ctx := context.Background()
+
+		// Bridge select engine events to the WS bus so the dashboard can render
+		// destructive-tool approval prompts (spec 5.4.0). The engine emits
+		// events to a buffered channel; we pump only the approval-related
+		// types — text streaming continues to flow through the provider's
+		// task.token events.
+		sink := make(chan engine.Event, 32)
+		task.EventSink = sink
+
+		forwardDone := make(chan struct{})
+		go func() {
+			defer close(forwardDone)
+			for ev := range sink {
+				switch ev.Type {
+				case "tool_pending_approval":
+					s.cfg.Events.Publish(events.Event{
+						Type:   "task.tool_pending_approval",
+						UserID: task.UserID,
+						Payload: map[string]any{
+							"task_id":     task.ID,
+							"approval_id": ev.ApprovalID,
+							"tool_call":   ev.ToolCall,
+						},
+					})
+				case "tool_approval_resolved":
+					s.cfg.Events.Publish(events.Event{
+						Type:   "task.tool_approval_resolved",
+						UserID: task.UserID,
+						Payload: map[string]any{
+							"task_id":     task.ID,
+							"approval_id": ev.ApprovalID,
+							"approved":    ev.Approved,
+						},
+					})
+				}
+			}
+		}()
+
 		result, err := s.engine.Run(ctx, task)
+		close(sink)
+		<-forwardDone
 		completed := time.Now().UTC()
 		record.CompletedAt = &completed
 		if err != nil {

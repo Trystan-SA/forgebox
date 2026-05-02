@@ -63,6 +63,13 @@ function send(msg: SocketMessage) {
 	socket.send(JSON.stringify(msg));
 }
 
+// sendMessage is the public outbound dispatcher used by chat consumers (e.g.
+// approval decisions). Falls through silently when the socket is not yet
+// connected — the underlying send() guards on readyState.
+export function sendMessage(type: string, payload?: unknown) {
+	send({ type, payload });
+}
+
 function scheduleReconnect() {
 	if (reconnectTimer) return;
 	reconnectTimer = setTimeout(() => {

@@ -167,6 +167,11 @@ func cmdServe() error {
 	// the same store on both sides — do not inline.
 	taskTokens := tasktoken.NewStore()
 
+	// Approvals registry is shared between the engine (which Registers and
+	// Awaits) and the gateway WebSocket handler (which Resolves). Task 10
+	// will wire it into gateway.Config; for now only the engine uses it.
+	approvals := engine.NewApprovals()
+
 	// Listen of the form ":8420" means "all interfaces"; expose it as 127.0.0.1
 	// so VMs on the same host can reach the gateway.
 	apiBaseURL := "http://" + cfg.Server.Listen
@@ -181,6 +186,7 @@ func cmdServe() error {
 		Sessions:     sessionMgr,
 		TaskTokens:   taskTokens,
 		APIBaseURL:   apiBaseURL,
+		Approvals:    approvals,
 	})
 
 	bus := events.New(0)

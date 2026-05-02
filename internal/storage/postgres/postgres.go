@@ -237,9 +237,17 @@ func (s *Store) migrate() error {
 
 		`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'dashboard'`,
-		`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_message_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
-		// Backfill last_message_at for existing rows where the default landed at "now":
-		`UPDATE sessions SET last_message_at = updated_at WHERE last_message_at = created_at OR last_message_at > updated_at`,
+		// Add nullable first so existing rows get NULL (not "now()"), then
+		// backfill from updated_at, then enforce NOT NULL + default. All four
+		// statements are idempotent on re-runs:
+		//   - ADD COLUMN IF NOT EXISTS: no-op if already added
+		//   - COALESCE-guarded UPDATE: no-op when last_message_at is already set
+		//   - SET NOT NULL: no-op if already NOT NULL
+		//   - SET DEFAULT: no-op if already defaulted
+		`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_message_at TIMESTAMPTZ`,
+		`UPDATE sessions SET last_message_at = COALESCE(last_message_at, updated_at)`,
+		`ALTER TABLE sessions ALTER COLUMN last_message_at SET NOT NULL`,
+		`ALTER TABLE sessions ALTER COLUMN last_message_at SET DEFAULT now()`,
 		`CREATE INDEX IF NOT EXISTS idx_sessions_user_last_message ON sessions(user_id, last_message_at DESC)`,
 
 		`ALTER TABLE messages ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT ''`,

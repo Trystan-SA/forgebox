@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { escapeHtml, renderHtml, safeHref } from './render';
 import { parseInline } from './inline';
 import { parseBlocks } from './block';
+import { renderMarkdown } from './index';
 
 describe('escapeHtml', () => {
 	it('escapes the five HTML-significant characters', () => {
@@ -222,5 +223,87 @@ describe('parseBlocks', () => {
 
 	it('whitespace-only input', () => {
 		expect(blocksToHtml('   \n\n  ')).toBe('');
+	});
+});
+
+describe('renderMarkdown end-to-end', () => {
+	it('mixed prose, list, code', () => {
+		const input = `# Hello
+
+This is **bold** and *italic*.
+
+- one
+- two
+
+\`\`\`
+code
+\`\`\``;
+		const expected =
+			'<h1>Hello</h1>' +
+			'<p>This is <strong>bold</strong> and <em>italic</em>.</p>' +
+			'<ul><li>one</li><li>two</li></ul>' +
+			'<pre><code>code</code></pre>';
+		expect(renderMarkdown(input)).toBe(expected);
+	});
+});
+
+describe('renderMarkdown XSS table', () => {
+	const cases: Array<{ name: string; input: string; expected: string }> = [
+		{
+			name: 'raw script tag escaped',
+			input: '<script>alert(1)</script>',
+			expected: '<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>'
+		},
+		{
+			name: 'javascript: href stripped',
+			input: '[click](javascript:alert(1))',
+			expected: '<p>click</p>'
+		},
+		{
+			name: 'data: href stripped',
+			input: '[click](data:text/html,<script>1</script>)',
+			expected: '<p>click</p>'
+		},
+		{
+			name: 'entity-encoded javascript scheme stripped',
+			input: '[click](javascript&#x3A;alert(1))',
+			expected: '<p>click</p>'
+		},
+		{
+			name: 'tags inside bold are escaped',
+			input: '**<img src=x onerror=alert(1)>**',
+			expected: '<p><strong>&lt;img src=x onerror=alert(1)&gt;</strong></p>'
+		},
+		{
+			name: 'attribute injection in href is escaped',
+			input: '[x](https://a.co" onmouseover="alert(1))',
+			expected:
+				'<p><a href="https://a.co&quot; onmouseover=&quot;alert(1)" rel="noopener noreferrer" target="_blank">x</a></p>'
+		},
+		{
+			name: 'tags inside code are escaped',
+			input: '`<script>x</script>`',
+			expected: '<p><code>&lt;script&gt;x&lt;/script&gt;</code></p>'
+		}
+	];
+
+	for (const c of cases) {
+		it(c.name, () => {
+			expect(renderMarkdown(c.input)).toBe(c.expected);
+		});
+	}
+});
+
+describe('streaming partials', () => {
+	it('partial bold marker renders literal', () => {
+		expect(renderMarkdown('**bo')).toBe('<p>**bo</p>');
+	});
+
+	it('partial bold with closer renders strong', () => {
+		expect(renderMarkdown('**bold**')).toBe('<p><strong>bold</strong></p>');
+	});
+
+	it('partial code-fence renders as paragraph', () => {
+		expect(renderMarkdown('```\nstreaming')).toBe('<p>``` streaming</p>');
 	});
 });

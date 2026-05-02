@@ -3,6 +3,7 @@ package sdk
 import (
 	"context"
 	"encoding/json"
+	"time"
 )
 
 // ProviderPlugin is the interface for LLM provider integrations.
@@ -80,6 +81,13 @@ type Message struct {
 	Content     string       `json:"content,omitempty"`
 	ToolCalls   []ToolCall   `json:"tool_calls,omitempty"`
 	ToolResults []ToolResult `json:"tool_results,omitempty"`
+
+	// Persistence-only metadata. Optional in provider calls; populated by
+	// SessionStore when reading transcripts. Empty for user messages.
+	Provider  string    `json:"provider,omitempty"`
+	Model     string    `json:"model,omitempty"`
+	TaskID    string    `json:"task_id,omitempty"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
 }
 
 // ToolCall represents an LLM's request to invoke a tool.

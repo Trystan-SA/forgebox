@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/forgebox/forgebox/internal/plugins"
 	"github.com/forgebox/forgebox/internal/sessions"
 	"github.com/forgebox/forgebox/internal/storage/postgres"
+	"github.com/forgebox/forgebox/internal/tasktoken"
 	"github.com/forgebox/forgebox/internal/telemetry"
 	"github.com/forgebox/forgebox/internal/vm"
 	"github.com/forgebox/forgebox/pkg/sdk"
@@ -160,11 +162,31 @@ func cmdServe() error {
 	sessionMgr := sessions.NewManager(store)
 	permChecker := permissions.NewChecker(cfg.Auth, store)
 
+	// Task tokens are issued by the engine (Task 8) for in-VM tool callbacks
+	// and resolved by the gateway's userID() to the originating user. Keep
+	// the same store on both sides — do not inline.
+	taskTokens := tasktoken.NewStore()
+
+	// Approvals registry is shared between the engine (which Registers and
+	// Awaits) and the gateway WebSocket handler (which Resolves). Task 10
+	// will wire it into gateway.Config; for now only the engine uses it.
+	approvals := engine.NewApprovals()
+
+	// Listen of the form ":8420" means "all interfaces"; expose it as 127.0.0.1
+	// so VMs on the same host can reach the gateway.
+	apiBaseURL := "http://" + cfg.Server.Listen
+	if strings.HasPrefix(cfg.Server.Listen, ":") {
+		apiBaseURL = "http://127.0.0.1" + cfg.Server.Listen
+	}
+
 	eng := engine.New(engine.Config{
 		Registry:     registry,
 		Orchestrator: orch,
 		Permissions:  permChecker,
 		Sessions:     sessionMgr,
+		TaskTokens:   taskTokens,
+		APIBaseURL:   apiBaseURL,
+		Approvals:    approvals,
 	})
 
 	bus := events.New(0)
@@ -180,6 +202,8 @@ func cmdServe() error {
 		BrainStore:     brainStore,
 		SecretBox:      secretBox,
 		Events:         bus,
+		TaskTokens:     taskTokens,
+		Approvals:      approvals,
 	})
 
 	slog.Info("starting ForgeBox",
@@ -267,6 +291,8 @@ func cmdRun() error {
 	defer func() { _ = store.Close() }()
 	defer orch.Shutdown(ctx)
 
+	// One-shot mode: no gateway server, so management tools and task tokens
+	// are unavailable. Engine.Run skips token issuance when TaskTokens is nil.
 	eng := engine.New(engine.Config{
 		Registry:     registry,
 		Orchestrator: orch,

@@ -27,6 +27,7 @@ import (
 	"github.com/forgebox/forgebox/internal/events"
 	"github.com/forgebox/forgebox/internal/plugins"
 	"github.com/forgebox/forgebox/internal/sessions"
+	"github.com/forgebox/forgebox/internal/tasktoken"
 	"github.com/forgebox/forgebox/pkg/sdk"
 	"github.com/google/uuid"
 )
@@ -45,6 +46,16 @@ type Config struct {
 	// Events is the in-process event bus that producers publish to and the
 	// WebSocket Hub fans out to connected clients. Required.
 	Events *events.Bus
+	// TaskTokens stores short-lived `fbtask_…` tokens issued by the engine
+	// for in-VM tool callbacks. Resolved by userID() to map back to the
+	// originating user. Optional; when nil, fbtask_-prefixed bearer tokens
+	// resolve as invalid (empty user id → 401-eligible).
+	TaskTokens *tasktoken.Store
+	// Approvals is the registry that the engine Registers/Awaits on for
+	// destructive-action approvals; the gateway WebSocket handler Resolves
+	// it when the dashboard sends a "tool_approval" message. Optional;
+	// when nil, inbound tool_approval messages are dropped (one-shot mode).
+	Approvals *engine.Approvals
 }
 
 // Server is the main ForgeBox API server.
@@ -59,6 +70,8 @@ type Server struct {
 	brainStore   sdk.BrainStore
 	secretBox    *fbcrypto.SecretBox
 	hub          *Hub
+	taskTokens   *tasktoken.Store
+	approvals    *engine.Approvals
 }
 
 // New creates a new gateway server. The event bus must be supplied; the
@@ -78,6 +91,8 @@ func New(cfg Config) *Server {
 		brainStore:   cfg.BrainStore,
 		secretBox:    cfg.SecretBox,
 		hub:          NewHub(cfg.Events, 0),
+		taskTokens:   cfg.TaskTokens,
+		approvals:    cfg.Approvals,
 	}
 	s.registerRoutes()
 	return s
@@ -258,7 +273,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		VCPUs:         req.VCPUs,
 		Timeout:       timeout,
 		NetworkAccess: req.NetworkAccess,
-		UserID:        getUserID(r),
+		UserID:        s.userID(r),
 	}
 
 	// Persist the task before kicking off the runner so GET /tasks/{id}
@@ -285,7 +300,47 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	// dashboard's poll converges on completed/failed.
 	go func() {
 		ctx := context.Background()
+
+		// Bridge select engine events to the WS bus so the dashboard can render
+		// destructive-tool approval prompts (spec 5.4.0). The engine emits
+		// events to a buffered channel; we pump only the approval-related
+		// types — text streaming continues to flow through the provider's
+		// task.token events.
+		sink := make(chan engine.Event, 32)
+		task.EventSink = sink
+
+		forwardDone := make(chan struct{})
+		go func() {
+			defer close(forwardDone)
+			for ev := range sink {
+				switch ev.Type {
+				case "tool_pending_approval":
+					s.cfg.Events.Publish(events.Event{
+						Type:   "task.tool_pending_approval",
+						UserID: task.UserID,
+						Payload: map[string]any{
+							"task_id":     task.ID,
+							"approval_id": ev.ApprovalID,
+							"tool_call":   ev.ToolCall,
+						},
+					})
+				case "tool_approval_resolved":
+					s.cfg.Events.Publish(events.Event{
+						Type:   "task.tool_approval_resolved",
+						UserID: task.UserID,
+						Payload: map[string]any{
+							"task_id":     task.ID,
+							"approval_id": ev.ApprovalID,
+							"approved":    ev.Approved,
+						},
+					})
+				}
+			}
+		}()
+
 		result, err := s.engine.Run(ctx, task)
+		close(sink)
+		<-forwardDone
 		completed := time.Now().UTC()
 		record.CompletedAt = &completed
 		if err != nil {
@@ -332,7 +387,7 @@ func (s *Server) handleCancelTask(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 	tasks, err := s.store.ListTasks(r.Context(), sdk.TaskFilter{
-		UserID: getUserID(r),
+		UserID: s.userID(r),
 		Limit:  50,
 	})
 	if err != nil {
@@ -344,7 +399,7 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	sess, err := s.store.ListSessions(r.Context(), sdk.SessionFilter{
-		UserID: getUserID(r),
+		UserID: s.userID(r),
 		Limit:  50,
 	})
 	if err != nil {
@@ -525,7 +580,7 @@ func (s *Server) handleListTools(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 	apps, err := s.store.ListApps(r.Context(), sdk.AppFilter{
-		UserID: getUserID(r),
+		UserID: s.userID(r),
 		Limit:  100,
 	})
 	if err != nil {
@@ -571,7 +626,7 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		ID:          uuid.New().String(),
 		Name:        req.Name,
 		Description: req.Description,
-		CreatedBy:   getUserID(r),
+		CreatedBy:   s.userID(r),
 		Sharing:     req.Sharing,
 		TeamID:      req.TeamID,
 		Status:      sdk.AppDraft,
@@ -676,11 +731,10 @@ func (s *Server) handleDeleteApp(w http.ResponseWriter, r *http.Request) {
 // --- Agent handlers ---
 //
 // See specs/1.0.0-agents.md. The handlers persist agent records and enforce
-// the validation rules in 1.2.3 (sharing values, role values, provider /
-// model existence, tool name allow-list).
+// the validation rules in 1.2.3 (sharing values, provider / model existence,
+// tool name allow-list).
 
 var validAgentSharing = map[string]bool{"personal": true, "team": true, "org": true}
-var validAgentRoles = map[string]bool{"worker": true, "orchestrator": true}
 
 // validateAgentRefs checks that the provider, model, and tool names on an
 // incoming agent record correspond to objects the gateway actually knows
@@ -724,8 +778,13 @@ func (s *Server) validateAgentRefs(provider, model, toolsJSON string) error {
 }
 
 func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
+	uid := s.userID(r)
+	if uid == "" {
+		writeError(w, http.StatusUnauthorized, "invalid token")
+		return
+	}
 	agents, err := s.store.ListAgents(r.Context(), sdk.AgentFilter{
-		UserID: getUserID(r),
+		UserID: uid,
 		Limit:  100,
 	})
 	if err != nil {
@@ -740,10 +799,14 @@ func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
+	uid := s.userID(r)
+	if uid == "" {
+		writeError(w, http.StatusUnauthorized, "invalid token")
+		return
+	}
 	var req struct {
 		Name         string `json:"name"`
 		Description  string `json:"description"`
-		Role         string `json:"role"`
 		SystemPrompt string `json:"system_prompt"`
 		Provider     string `json:"provider"`
 		Model        string `json:"model"`
@@ -757,13 +820,6 @@ func (s *Server) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(req.Name) == "" {
 		writeError(w, http.StatusBadRequest, "name is required")
-		return
-	}
-	if req.Role == "" {
-		req.Role = "worker"
-	}
-	if !validAgentRoles[req.Role] {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid role %q", req.Role))
 		return
 	}
 	if req.Sharing == "" {
@@ -790,14 +846,13 @@ func (s *Server) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
 		ID:           uuid.New().String(),
 		Name:         strings.TrimSpace(req.Name),
 		Description:  req.Description,
-		Role:         req.Role,
 		SystemPrompt: req.SystemPrompt,
 		Provider:     req.Provider,
 		Model:        req.Model,
 		Tools:        req.Tools,
 		Sharing:      req.Sharing,
 		TeamID:       req.TeamID,
-		CreatedBy:    getUserID(r),
+		CreatedBy:    uid,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
@@ -810,6 +865,10 @@ func (s *Server) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetAgent(w http.ResponseWriter, r *http.Request) {
+	if uid := s.userID(r); uid == "" {
+		writeError(w, http.StatusUnauthorized, "invalid token")
+		return
+	}
 	id := r.PathValue("id")
 	agent, err := s.store.GetAgent(r.Context(), id)
 	if err != nil {
@@ -820,6 +879,10 @@ func (s *Server) handleGetAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
+	if uid := s.userID(r); uid == "" {
+		writeError(w, http.StatusUnauthorized, "invalid token")
+		return
+	}
 	id := r.PathValue("id")
 	existing, err := s.store.GetAgent(r.Context(), id)
 	if err != nil {
@@ -830,7 +893,6 @@ func (s *Server) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name         *string `json:"name,omitempty"`
 		Description  *string `json:"description,omitempty"`
-		Role         *string `json:"role,omitempty"`
 		SystemPrompt *string `json:"system_prompt,omitempty"`
 		Provider     *string `json:"provider,omitempty"`
 		Model        *string `json:"model,omitempty"`
@@ -852,13 +914,6 @@ func (s *Server) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Description != nil {
 		existing.Description = *req.Description
-	}
-	if req.Role != nil {
-		if !validAgentRoles[*req.Role] {
-			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid role %q", *req.Role))
-			return
-		}
-		existing.Role = *req.Role
 	}
 	if req.SystemPrompt != nil {
 		existing.SystemPrompt = *req.SystemPrompt
@@ -900,6 +955,10 @@ func (s *Server) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteAgent(w http.ResponseWriter, r *http.Request) {
+	if uid := s.userID(r); uid == "" {
+		writeError(w, http.StatusUnauthorized, "invalid token")
+		return
+	}
 	id := r.PathValue("id")
 	if err := s.store.DeleteAgent(r.Context(), id); err != nil {
 		slog.Error("failed to delete agent", "error", err)
@@ -913,7 +972,7 @@ func (s *Server) handleDeleteAgent(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListAutomations(w http.ResponseWriter, r *http.Request) {
 	automations, err := s.store.ListAutomations(r.Context(), sdk.AutomationFilter{
-		UserID: getUserID(r),
+		UserID: s.userID(r),
 		Limit:  100,
 	})
 	if err != nil {
@@ -963,7 +1022,7 @@ func (s *Server) handleCreateAutomation(w http.ResponseWriter, r *http.Request) 
 		ID:          uuid.New().String(),
 		Name:        req.Name,
 		Description: req.Description,
-		CreatedBy:   getUserID(r),
+		CreatedBy:   s.userID(r),
 		Sharing:     req.Sharing,
 		TeamID:      req.TeamID,
 		Trigger:     req.Trigger,
@@ -1241,13 +1300,26 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 
 // --- Helpers ---
 
-func getUserID(r *http.Request) string {
-	// TODO: Extract from auth middleware (JWT, API key, etc.).
+// userID resolves the calling user from the Authorization header. Bearer
+// tokens prefixed with `fbtask_` are looked up in TaskTokens (issued by the
+// engine for in-VM tool callbacks) and resolve to the originating user.
+// Other Bearer tokens fall back to the existing stub until proper auth
+// lands.
+func (s *Server) userID(r *http.Request) string {
 	auth := r.Header.Get("Authorization")
-	if strings.HasPrefix(auth, "Bearer ") {
-		return "authenticated-user"
+	if !strings.HasPrefix(auth, "Bearer ") {
+		return "anonymous"
 	}
-	return "anonymous"
+	token := strings.TrimPrefix(auth, "Bearer ")
+	if strings.HasPrefix(token, tasktoken.Prefix) {
+		if s.taskTokens != nil {
+			if userID, _, ok := s.taskTokens.Resolve(token); ok {
+				return userID
+			}
+		}
+		return "" // token-shaped but invalid → 401-eligible
+	}
+	return "authenticated-user"
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {

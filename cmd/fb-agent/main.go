@@ -46,6 +46,16 @@ func main() {
 	registry.Register(&atools.GrepTool{})
 	registry.Register(&atools.WebFetchTool{})
 
+	// Management tools — call back to the gateway via FORGEBOX_API_URL/TOKEN
+	// to manage ForgeBox itself (spec 5.0.0).
+	registry.Register(&atools.ListAgentsTool{})
+	registry.Register(&atools.GetAgentTool{})
+	registry.Register(&atools.CreateAgentTool{})
+	registry.Register(&atools.UpdateAgentTool{})
+	registry.Register(&atools.DeleteAgentTool{})
+	registry.Register(&atools.ListProvidersTool{})
+	registry.Register(&atools.ListModelsForProviderTool{})
+
 	a := agent.New(agent.Config{
 		Tools:   registry,
 		Workdir: "/workspace",

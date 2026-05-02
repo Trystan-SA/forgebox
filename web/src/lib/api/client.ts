@@ -7,6 +7,7 @@ import type {
 	AuditEntry,
 	CreateTaskRequest,
 	TaskEvent,
+	ToolCall,
 	LoginRequest,
 	LoginResponse,
 	SetupStatusResponse,
@@ -119,9 +120,42 @@ export function streamTask(
 		}
 	});
 
+	type ApprovalPendingPayload = {
+		task_id: string;
+		approval_id: string;
+		tool_call: ToolCall | null;
+	};
+	type ApprovalResolvedPayload = {
+		task_id: string;
+		approval_id: string;
+		approved: boolean;
+	};
+
+	const unsubPending = subscribeSocket('task.tool_pending_approval', (raw) => {
+		const p = raw as ApprovalPendingPayload;
+		if (p?.task_id !== id) return;
+		onEvent({
+			type: 'tool_pending_approval',
+			approval_id: p.approval_id,
+			tool_call: p.tool_call ?? undefined
+		});
+	});
+
+	const unsubResolved = subscribeSocket('task.tool_approval_resolved', (raw) => {
+		const p = raw as ApprovalResolvedPayload;
+		if (p?.task_id !== id) return;
+		onEvent({
+			type: 'tool_approval_resolved',
+			approval_id: p.approval_id,
+			approved: p.approved
+		});
+	});
+
 	return () => {
 		unsubToken();
 		unsubStatus();
+		unsubPending();
+		unsubResolved();
 	};
 }
 

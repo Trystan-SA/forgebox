@@ -13,6 +13,19 @@ import (
 	atools "github.com/forgebox/forgebox/internal/agent/tools"
 )
 
+// envContextKey is the context key under which per-allocation env vars
+// (e.g. FORGEBOX_API_TOKEN) are propagated to in-process tools running in
+// local mode. In firecracker mode the same map is communicated to the guest
+// via the VM boot config; this is the in-process equivalent.
+type envContextKey struct{}
+
+// EnvFromContext returns the per-allocation env map attached by the local
+// executor, or nil if none is present.
+func EnvFromContext(ctx context.Context) map[string]string {
+	v, _ := ctx.Value(envContextKey{}).(map[string]string)
+	return v
+}
+
 // LocalExecutor runs tools directly without VM isolation.
 type LocalExecutor struct {
 	tools   *atools.Registry
@@ -37,13 +50,23 @@ func NewLocalExecutor(workdir string) *LocalExecutor {
 }
 
 // Execute runs a tool directly in the current process.
-func (l *LocalExecutor) Execute(ctx context.Context, toolName string, input json.RawMessage) (*ExecResult, error) {
+//
+// The env map is per-allocation guest env (e.g. FORGEBOX_API_TOKEN). Because
+// local mode does not spawn a subprocess, env is propagated via context using
+// envContextKey; in-process tools that need it can read it via
+// EnvFromContext. In firecracker mode the same map is delivered to the guest
+// at boot via the VM config (see orchestrator.bootVM).
+func (l *LocalExecutor) Execute(ctx context.Context, toolName string, input json.RawMessage, env map[string]string) (*ExecResult, error) {
 	tool, ok := l.tools.Get(toolName)
 	if !ok {
 		return &ExecResult{
 			Content: fmt.Sprintf("unknown tool: %s", toolName),
 			IsError: true,
 		}, nil
+	}
+
+	if len(env) > 0 {
+		ctx = context.WithValue(ctx, envContextKey{}, env)
 	}
 
 	start := time.Now()

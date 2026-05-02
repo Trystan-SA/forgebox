@@ -336,6 +336,70 @@ func (r *Registry) registerBuiltinTools() {
 				"content": stringProp("File contents (action=write)."),
 			}, "action"),
 		},
+		&builtinTool{
+			name: "list_agents",
+			desc: "List ForgeBox agents visible to the calling user. Optional filter by sharing scope.",
+			schema: objectSchema(map[string]any{
+				"sharing": map[string]any{"type": "string", "enum": []string{"personal", "team", "org"}, "description": "Optional filter by sharing scope."},
+			}),
+		},
+		&builtinTool{
+			name: "get_agent",
+			desc: "Return the full record for one ForgeBox agent by id.",
+			schema: objectSchema(map[string]any{
+				"id": stringProp("Agent id."),
+			}, "id"),
+		},
+		&builtinTool{
+			name: "create_agent",
+			desc: "Create a new ForgeBox agent. Required: name. Optional: description, system_prompt, provider, model, tools (JSON-encoded array of tool names), sharing (personal|team|org), team_id.",
+			schema: objectSchema(map[string]any{
+				"name":          stringProp("Display name (non-empty)."),
+				"description":   stringProp("Optional free-form description."),
+				"system_prompt": stringProp("Optional system prompt prepended to the agent's conversations."),
+				"provider":      stringProp("Provider registry name (call list_providers to see options)."),
+				"model":         stringProp("Model id from the chosen provider's catalog (call list_models_for_provider to see options)."),
+				"tools":         stringProp("JSON-encoded array of allowed tool names, e.g. '[\"bash\",\"file_read\"]'."),
+				"sharing":       map[string]any{"type": "string", "enum": []string{"personal", "team", "org"}, "default": "personal", "description": "Visibility scope."},
+				"team_id":       stringProp("Required when sharing=team."),
+			}, "name"),
+		},
+		&builtinTool{
+			name:        "update_agent",
+			desc:        "Patch an existing ForgeBox agent by id. Only fields present in the input are updated. This is a destructive action — the dashboard will ask the user to approve before it runs.",
+			destructive: true,
+			schema: objectSchema(map[string]any{
+				"id":            stringProp("Agent id (required)."),
+				"name":          stringProp("New display name."),
+				"description":   stringProp("New description."),
+				"system_prompt": stringProp("New system prompt."),
+				"provider":      stringProp("New provider registry name."),
+				"model":         stringProp("New model id."),
+				"tools":         stringProp("New JSON-encoded array of allowed tool names."),
+				"sharing":       map[string]any{"type": "string", "enum": []string{"personal", "team", "org"}, "description": "New sharing scope."},
+				"team_id":       stringProp("New team id; required when sharing=team."),
+			}, "id"),
+		},
+		&builtinTool{
+			name:        "delete_agent",
+			desc:        "Permanently delete a ForgeBox agent by id. Hard delete; not recoverable. The dashboard will ask the user to approve before it runs.",
+			destructive: true,
+			schema: objectSchema(map[string]any{
+				"id": stringProp("Agent id to delete."),
+			}, "id"),
+		},
+		&builtinTool{
+			name:   "list_providers",
+			desc:   "List configured LLM providers (name, provider_type, builtin). Use list_models_for_provider to fetch the model catalog for one of them.",
+			schema: objectSchema(map[string]any{}),
+		},
+		&builtinTool{
+			name: "list_models_for_provider",
+			desc: "List models available on a configured provider, most-powerful-first. Pass the provider's name as returned by list_providers.",
+			schema: objectSchema(map[string]any{
+				"provider": stringProp("Provider name as returned by list_providers."),
+			}, "provider"),
+		},
 	}
 	for _, t := range builtins {
 		r.RegisterTool(t)
@@ -345,9 +409,10 @@ func (r *Registry) registerBuiltinTools() {
 // builtinTool is a host-side tool definition. Actual execution is delegated
 // to the in-VM agent; this just provides the schema for the LLM.
 type builtinTool struct {
-	name   string
-	desc   string
-	schema map[string]any
+	name        string
+	desc        string
+	schema      map[string]any
+	destructive bool
 }
 
 func (t *builtinTool) Name() string    { return t.name }
@@ -371,4 +436,4 @@ func (t *builtinTool) Execute(_ context.Context, _ json.RawMessage) (*sdk.ToolEx
 func (t *builtinTool) IsReadOnly(_ json.RawMessage) bool {
 	return t.name == "file_read" || t.name == "glob" || t.name == "grep"
 }
-func (t *builtinTool) IsDestructive(_ json.RawMessage) bool { return false }
+func (t *builtinTool) IsDestructive(_ json.RawMessage) bool { return t.destructive }

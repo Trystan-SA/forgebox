@@ -1,5 +1,7 @@
 <script lang="ts">
 	import type { TaskEvent } from '$lib/api/types';
+	import ToolApprovalCard from '$lib/components/ToolApprovalCard.svelte';
+	import { sendMessage } from '$lib/stores/socket.svelte';
 
 	interface Props {
 		events: TaskEvent[];
@@ -8,6 +10,29 @@
 
 	let { events, isRunning }: Props = $props();
 	let container: HTMLDivElement | undefined = $state();
+
+	function safeJSONParse(s: string): Record<string, unknown> {
+		try {
+			const v = JSON.parse(s);
+			return typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : {};
+		} catch {
+			return {};
+		}
+	}
+
+	const resolutions = $derived.by(() => {
+		const acc: Record<string, { approved: boolean }> = {};
+		for (const ev of events) {
+			if (ev.type === 'tool_approval_resolved' && ev.approval_id) {
+				acc[ev.approval_id] = { approved: !!ev.approved };
+			}
+		}
+		return acc;
+	});
+
+	function handleApproval(decision: 'approve' | 'deny', approvalId: string) {
+		sendMessage('tool_approval', { approval_id: approvalId, decision });
+	}
 
 	$effect(() => {
 		// Scroll to bottom on new events
@@ -50,6 +75,18 @@
 					<div class="stream__result" class:stream__result--error={event.result?.is_error}>
 						{event.result?.content}
 					</div>
+				{:else if event.type === 'tool_pending_approval'}
+					<div class="stream__approval">
+						<ToolApprovalCard
+							toolName={event.tool_call?.name ?? 'unknown'}
+							inputArgs={event.tool_call ? safeJSONParse(event.tool_call.input) : {}}
+							approvalId={event.approval_id ?? ''}
+							resolved={event.approval_id ? resolutions[event.approval_id] ?? null : null}
+							onresolve={handleApproval}
+						/>
+					</div>
+				{:else if event.type === 'tool_approval_resolved'}
+					<!-- Resolution is reflected via the resolutions store on the matching pending event; nothing to render here. -->
 				{:else if event.type === 'error'}
 					<div class="stream__error">
 						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -158,6 +195,10 @@
 				background: rgba($error-600, 0.15);
 				color: $error-500;
 			}
+		}
+
+		&__approval {
+			margin: $space-2 0;
 		}
 
 		&__error {

@@ -571,9 +571,9 @@ func (s *Store) CreateAgent(ctx context.Context, agent *sdk.AgentRecord) error {
 		agent.UpdatedAt = now
 	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO agents (id, name, description, role, system_prompt, provider, model, tools, sharing, team_id, created_by, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-		agent.ID, agent.Name, agent.Description, agent.Role, agent.SystemPrompt,
+		`INSERT INTO agents (id, name, description, system_prompt, provider, model, tools, sharing, team_id, created_by, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+		agent.ID, agent.Name, agent.Description, agent.SystemPrompt,
 		agent.Provider, agent.Model, agent.Tools, agent.Sharing, agent.TeamID,
 		agent.CreatedBy, agent.CreatedAt, agent.UpdatedAt,
 	)
@@ -583,7 +583,7 @@ func (s *Store) CreateAgent(ctx context.Context, agent *sdk.AgentRecord) error {
 // GetAgent retrieves an agent by ID.
 func (s *Store) GetAgent(ctx context.Context, id string) (*sdk.AgentRecord, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, name, description, role, system_prompt, provider, model, tools, sharing, team_id, created_by, created_at, updated_at
+		`SELECT id, name, description, system_prompt, provider, model, tools, sharing, team_id, created_by, created_at, updated_at
 		 FROM agents WHERE id = $1`, id)
 	return scanAgent(row)
 }
@@ -592,9 +592,9 @@ func (s *Store) GetAgent(ctx context.Context, id string) (*sdk.AgentRecord, erro
 func (s *Store) UpdateAgent(ctx context.Context, agent *sdk.AgentRecord) error {
 	agent.UpdatedAt = time.Now().UTC()
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE agents SET name=$1, description=$2, role=$3, system_prompt=$4, provider=$5, model=$6, tools=$7, sharing=$8, team_id=$9, updated_at=$10
-		 WHERE id=$11`,
-		agent.Name, agent.Description, agent.Role, agent.SystemPrompt,
+		`UPDATE agents SET name=$1, description=$2, system_prompt=$3, provider=$4, model=$5, tools=$6, sharing=$7, team_id=$8, updated_at=$9
+		 WHERE id=$10`,
+		agent.Name, agent.Description, agent.SystemPrompt,
 		agent.Provider, agent.Model, agent.Tools, agent.Sharing, agent.TeamID,
 		agent.UpdatedAt, agent.ID,
 	)
@@ -615,7 +615,7 @@ func (s *Store) DeleteAgent(ctx context.Context, id string) error {
 // When UserID is empty the filter is skipped and every agent is returned
 // (used by background jobs and admin tooling).
 func (s *Store) ListAgents(ctx context.Context, filter sdk.AgentFilter) ([]*sdk.AgentRecord, error) {
-	query := `SELECT id, name, description, role, system_prompt, provider, model, tools, sharing, team_id, created_by, created_at, updated_at FROM agents WHERE 1=1`
+	query := `SELECT id, name, description, system_prompt, provider, model, tools, sharing, team_id, created_by, created_at, updated_at FROM agents WHERE 1=1`
 	args := []any{}
 	if filter.UserID != "" {
 		query += ` AND (created_by = $1 OR sharing = 'org' OR (sharing = 'team' AND team_id IN (SELECT team_ids FROM users WHERE id = $1)))`
@@ -646,7 +646,7 @@ func (s *Store) ListAgents(ctx context.Context, filter sdk.AgentFilter) ([]*sdk.
 func scanAgent(row *sql.Row) (*sdk.AgentRecord, error) {
 	var a sdk.AgentRecord
 	var teamID sql.NullString
-	if err := row.Scan(&a.ID, &a.Name, &a.Description, &a.Role, &a.SystemPrompt,
+	if err := row.Scan(&a.ID, &a.Name, &a.Description, &a.SystemPrompt,
 		&a.Provider, &a.Model, &a.Tools, &a.Sharing, &teamID,
 		&a.CreatedBy, &a.CreatedAt, &a.UpdatedAt); err != nil {
 		return nil, err
@@ -658,7 +658,7 @@ func scanAgent(row *sql.Row) (*sdk.AgentRecord, error) {
 func scanAgentRow(rows *sql.Rows) (*sdk.AgentRecord, error) {
 	var a sdk.AgentRecord
 	var teamID sql.NullString
-	if err := rows.Scan(&a.ID, &a.Name, &a.Description, &a.Role, &a.SystemPrompt,
+	if err := rows.Scan(&a.ID, &a.Name, &a.Description, &a.SystemPrompt,
 		&a.Provider, &a.Model, &a.Tools, &a.Sharing, &teamID,
 		&a.CreatedBy, &a.CreatedAt, &a.UpdatedAt); err != nil {
 		return nil, err
@@ -666,4 +666,3 @@ func scanAgentRow(rows *sql.Rows) (*sdk.AgentRecord, error) {
 	a.TeamID = teamID.String
 	return &a, nil
 }
-

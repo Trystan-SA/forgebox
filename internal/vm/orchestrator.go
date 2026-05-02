@@ -35,6 +35,7 @@ type VM struct {
 	Config    AllocRequest
 	BootedAt  time.Time
 	AgentAddr string
+	EnvVars   map[string]string
 }
 
 // Status tracks the lifecycle state of a VM.
@@ -49,10 +50,12 @@ const (
 
 // AllocRequest configures a new VM allocation.
 type AllocRequest struct {
-	MemoryMB      int
-	VCPUs         int
-	Timeout       time.Duration
-	NetworkAccess bool
+	MemoryMB           int
+	VCPUs              int
+	Timeout            time.Duration
+	NetworkAccess      bool
+	ControlPlaneAccess bool              // grants narrow egress to FORGEBOX_API_URL only
+	EnvVars            map[string]string // injected as guest env (e.g. FORGEBOX_API_TOKEN)
 }
 
 // ExecResult is the output of a tool execution.
@@ -115,6 +118,7 @@ func (o *Orchestrator) Allocate(ctx context.Context, req *AllocRequest) (string,
 			Status:   VMRunning,
 			Config:   *req,
 			BootedAt: time.Now(),
+			EnvVars:  req.EnvVars,
 		}
 		o.mu.Unlock()
 		return id, nil
@@ -136,6 +140,7 @@ func (o *Orchestrator) Allocate(ctx context.Context, req *AllocRequest) (string,
 		o.pool = o.pool[:len(o.pool)-1]
 		vm.Status = VMRunning
 		vm.Config = *req
+		vm.EnvVars = req.EnvVars
 		o.active[vm.ID] = vm
 		go o.replenishPool()
 		slog.Debug("allocated VM from pool", "vm_id", vm.ID)
@@ -166,10 +171,15 @@ func (o *Orchestrator) Execute(ctx context.Context, vmID, toolName string, input
 	defer cancel()
 
 	if o.mode == "local" {
-		return o.local.Execute(execCtx, toolName, input)
+		return o.local.Execute(execCtx, toolName, input, vm.EnvVars)
 	}
 
 	// Firecracker mode — call the in-VM agent via vsock.
+	// Env vars are stored on *VM but are not yet wired into the firecracker
+	// guest config; that is deferred to a follow-up commit.
+	if len(vm.EnvVars) > 0 {
+		slog.Debug("VM env injection deferred (firecracker mode)", "vm_id", vm.ID, "env_count", len(vm.EnvVars))
+	}
 	start := time.Now()
 	result, err := o.callAgent(execCtx, vm, toolName, input)
 	if err != nil {
@@ -237,11 +247,19 @@ func (o *Orchestrator) Status() (poolSize, activeCount int) {
 	return len(o.pool), len(o.active)
 }
 
+// DefaultTimeout returns the configured default per-task timeout. Engines
+// can use this to align their own resource lifetimes with the VM lifetime
+// when a task does not specify a timeout explicitly.
+func (o *Orchestrator) DefaultTimeout() time.Duration {
+	return o.cfg.DefaultTimeout
+}
+
 // --- Firecracker internals (only used when mode == "firecracker") ---
 
 func (o *Orchestrator) bootVM(ctx context.Context, req *AllocRequest) (*VM, error) {
 	id := uuid.New().String()[:12]
 	slog.Debug("booting VM", "vm_id", id, "memory_mb", req.MemoryMB, "vcpus", req.VCPUs)
+	slog.Debug("VM control plane access", "vm_id", id, "enabled", req.ControlPlaneAccess)
 
 	vm := &VM{
 		ID:        id,
@@ -249,6 +267,7 @@ func (o *Orchestrator) bootVM(ctx context.Context, req *AllocRequest) (*VM, erro
 		Config:    *req,
 		BootedAt:  time.Now(),
 		AgentAddr: fmt.Sprintf("vsock://%s:%d", id, 10000),
+		EnvVars:   req.EnvVars,
 	}
 
 	// TODO: Firecracker SDK calls:

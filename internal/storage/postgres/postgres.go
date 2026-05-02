@@ -189,7 +189,6 @@ func (s *Store) migrate() error {
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
 			description TEXT NOT NULL DEFAULT '',
-			role TEXT NOT NULL DEFAULT 'worker',
 			system_prompt TEXT NOT NULL DEFAULT '',
 			provider TEXT NOT NULL DEFAULT '',
 			model TEXT NOT NULL DEFAULT '',
@@ -202,6 +201,7 @@ func (s *Store) migrate() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_agents_user ON agents(created_by)`,
 		`CREATE INDEX IF NOT EXISTS idx_agents_team ON agents(team_id)`,
+		`ALTER TABLE agents DROP COLUMN IF EXISTS role`,
 
 		// --- Brain tables ---
 

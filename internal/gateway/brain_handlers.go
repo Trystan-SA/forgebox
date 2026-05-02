@@ -78,7 +78,7 @@ func (s *Server) handleCreateBrainFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, err := s.brainService.CreateFile(r.Context(), brain.ID, req.Title, req.Content, getUserID(r))
+	file, err := s.brainService.CreateFile(r.Context(), brain.ID, req.Title, req.Content, s.userID(r))
 	if err != nil {
 		slog.Error("failed to create brain file", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to create file")
@@ -294,7 +294,7 @@ func (s *Server) handleApproveDream(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := s.brainStore.UpdateDreamProposalStatus(r.Context(), did, sdk.DreamApproved, getUserID(r)); err != nil {
+	if err := s.brainStore.UpdateDreamProposalStatus(r.Context(), did, sdk.DreamApproved, s.userID(r)); err != nil {
 		slog.Error("failed to update dream status", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to approve dream")
 		return
@@ -307,7 +307,7 @@ func (s *Server) handleRejectDream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	did := r.PathValue("did")
-	if err := s.brainStore.UpdateDreamProposalStatus(r.Context(), did, sdk.DreamRejected, getUserID(r)); err != nil {
+	if err := s.brainStore.UpdateDreamProposalStatus(r.Context(), did, sdk.DreamRejected, s.userID(r)); err != nil {
 		slog.Error("failed to reject dream", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to reject dream")
 		return

@@ -233,6 +233,30 @@ func (s *Store) migrate() error {
 
 		`CREATE INDEX IF NOT EXISTS idx_brain_files_active ON brain_files(brain_id) WHERE deleted_at IS NULL`,
 
+		// --- Conversations on the dashboard (specs/7.0.0) ---
+
+		`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'dashboard'`,
+		`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_message_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
+		// Backfill last_message_at for existing rows where the default landed at "now":
+		`UPDATE sessions SET last_message_at = updated_at WHERE last_message_at = created_at OR last_message_at > updated_at`,
+		`CREATE INDEX IF NOT EXISTS idx_sessions_user_last_message ON sessions(user_id, last_message_at DESC)`,
+
+		`ALTER TABLE messages ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE messages ADD COLUMN IF NOT EXISTS model TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE messages ADD COLUMN IF NOT EXISTS task_id TEXT`,
+
+		// tasks.session_id FK with idempotent guard.
+		`DO $$ BEGIN
+   IF NOT EXISTS (
+     SELECT 1 FROM pg_constraint WHERE conname = 'tasks_session_id_fkey'
+   ) THEN
+     ALTER TABLE tasks
+       ADD CONSTRAINT tasks_session_id_fkey
+       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE SET NULL;
+   END IF;
+ END $$`,
+
 		`CREATE TABLE IF NOT EXISTS brain_links (
 			source_file_id TEXT NOT NULL REFERENCES brain_files(id) ON DELETE CASCADE,
 			target_file_id TEXT NOT NULL REFERENCES brain_files(id) ON DELETE CASCADE,

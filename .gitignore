@@ -58,6 +58,7 @@ data/
 # Web frontend
 web/node_modules/
 web/.svelte-kit/
+web/.svelte-kit.bak/
 web/build/
 
 # Superpowers working docs (local only)

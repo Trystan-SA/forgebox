@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { escapeHtml, renderHtml, safeHref } from './render';
 import { parseInline } from './inline';
+import { parseBlocks } from './block';
 
 describe('escapeHtml', () => {
 	it('escapes the five HTML-significant characters', () => {
@@ -133,5 +134,93 @@ describe('parseInline', () => {
 		expect(inlineToHtml('[**hi**](https://x.co)')).toBe(
 			'<p><a href="https://x.co" rel="noopener noreferrer" target="_blank"><strong>hi</strong></a></p>'
 		);
+	});
+});
+
+function blocksToHtml(text: string): string {
+	return renderHtml(parseBlocks(text));
+}
+
+describe('parseBlocks', () => {
+	it('single paragraph', () => {
+		expect(blocksToHtml('hello world')).toBe('<p>hello world</p>');
+	});
+
+	it('two paragraphs separated by blank line', () => {
+		expect(blocksToHtml('one\n\ntwo')).toBe('<p>one</p><p>two</p>');
+	});
+
+	it('soft-wrapped paragraph keeps newlines as spaces', () => {
+		expect(blocksToHtml('one\ntwo')).toBe('<p>one two</p>');
+	});
+
+	it('h1', () => {
+		expect(blocksToHtml('# Title')).toBe('<h1>Title</h1>');
+	});
+
+	it('h2', () => {
+		expect(blocksToHtml('## Title')).toBe('<h2>Title</h2>');
+	});
+
+	it('h3', () => {
+		expect(blocksToHtml('### Title')).toBe('<h3>Title</h3>');
+	});
+
+	it('headings with inline formatting', () => {
+		expect(blocksToHtml('## hello **world**')).toBe('<h2>hello <strong>world</strong></h2>');
+	});
+
+	it('unordered list', () => {
+		expect(blocksToHtml('- a\n- b')).toBe('<ul><li>a</li><li>b</li></ul>');
+	});
+
+	it('ordered list', () => {
+		expect(blocksToHtml('1. a\n2. b')).toBe('<ol><li>a</li><li>b</li></ol>');
+	});
+
+	it('blockquote', () => {
+		expect(blocksToHtml('> quoted')).toBe('<blockquote>quoted</blockquote>');
+	});
+
+	it('fenced code block preserves contents and escapes them', () => {
+		expect(blocksToHtml('```\n<b>x</b>\n```')).toBe(
+			'<pre><code>&lt;b&gt;x&lt;/b&gt;</code></pre>'
+		);
+	});
+
+	it('fenced code block with language tag (tag ignored)', () => {
+		expect(blocksToHtml('```js\nconst x = 1;\n```')).toBe(
+			'<pre><code>const x = 1;</code></pre>'
+		);
+	});
+
+	it('fenced code block without closer renders literal text', () => {
+		expect(blocksToHtml('```\nunclosed')).toBe('<p>``` unclosed</p>');
+	});
+
+	it('heading then list', () => {
+		expect(blocksToHtml('# Title\n\n- a\n- b')).toBe(
+			'<h1>Title</h1><ul><li>a</li><li>b</li></ul>'
+		);
+	});
+
+	it('list then paragraph', () => {
+		expect(blocksToHtml('- a\n- b\n\nthen prose')).toBe(
+			'<ul><li>a</li><li>b</li></ul><p>then prose</p>'
+		);
+	});
+
+	it('paragraph then code block', () => {
+		expect(blocksToHtml('intro\n\n```\ncode\n```')).toBe(
+			'<p>intro</p><pre><code>code</code></pre>'
+		);
+	});
+
+	it('empty input', () => {
+		expect(blocksToHtml('')).toBe('');
+	});
+
+	it('whitespace-only input', () => {
+		expect(blocksToHtml('   \n\n  ')).toBe('');
 	});
 });

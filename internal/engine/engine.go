@@ -78,6 +78,15 @@ type Task struct {
 	Model    string
 	UserID   string
 
+	// SessionID is the conversation this task belongs to. Empty for
+	// one-shot CLI calls.
+	SessionID string
+
+	// History is the prior transcript for the conversation. When non-empty,
+	// it is prepended to the message slice fed to the provider so the LLM
+	// sees the full context. Empty preserves the existing single-turn path.
+	History []sdk.Message
+
 	// VM configuration overrides.
 	MemoryMB      int
 	VCPUs         int
@@ -94,6 +103,13 @@ type Result struct {
 	ToolUses int
 	Cost     Cost
 	Duration time.Duration
+
+	// NewMessages are the messages produced during this run, in the order
+	// the engine appended them (assistant turns and synthetic
+	// user/tool_result turns). The caller persists these to the session
+	// transcript. Does NOT include the initial user prompt — the caller
+	// already wrote that before invoking Run.
+	NewMessages []sdk.Message
 }
 
 // Cost tracks token usage and monetary cost.
@@ -173,10 +189,14 @@ func (e *Engine) Run(ctx context.Context, task *Task) (*Result, error) {
 	}
 	defer e.orchestrator.Release(ctx, vmID)
 
-	// Build the conversation.
-	messages := []sdk.Message{
-		{Role: "user", Content: task.Prompt},
-	}
+	// Build the conversation. History (if any) is replayed verbatim so the
+	// provider sees prior turns; the new prompt is appended last. initialLen
+	// marks where new turns start so we can return only the messages
+	// produced during this run.
+	messages := make([]sdk.Message, 0, len(task.History)+1)
+	messages = append(messages, task.History...)
+	messages = append(messages, sdk.Message{Role: "user", Content: task.Prompt})
+	initialLen := len(messages)
 
 	var totalCost Cost
 	var toolUseCount int
@@ -204,13 +224,20 @@ func (e *Engine) Run(ctx context.Context, task *Task) (*Result, error) {
 			e.emit(task, Event{Type: "text", Text: resp.Content})
 		}
 
-		// If no tool calls, we're done.
+		// If no tool calls, we're done. Append the final assistant message so
+		// the caller can persist it; collect every new message added during
+		// this run as Result.NewMessages.
 		if len(resp.ToolCalls) == 0 {
+			messages = append(messages, sdk.Message{
+				Role:    "assistant",
+				Content: resp.Content,
+			})
 			return &Result{
-				Output:   resp.Content,
-				ToolUses: toolUseCount,
-				Cost:     totalCost,
-				Duration: time.Since(start),
+				Output:      resp.Content,
+				ToolUses:    toolUseCount,
+				Cost:        totalCost,
+				Duration:    time.Since(start),
+				NewMessages: append([]sdk.Message{}, messages[initialLen:]...),
 			}, nil
 		}
 

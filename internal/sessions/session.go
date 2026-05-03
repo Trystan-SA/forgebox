@@ -11,6 +11,12 @@ import (
 )
 
 // Manager handles session lifecycle and in-memory caching.
+//
+// The cache is read-mostly and treated as immutable from the outside:
+// pointers in the map are never mutated in place. Mutating methods
+// allocate a new SessionRecord, copy the current state, apply changes,
+// and atomically swap the pointer under Lock. Get returns a value copy
+// so callers can never alias a cached pointer.
 type Manager struct {
 	store    sdk.SessionStore
 	mu       sync.RWMutex
@@ -30,9 +36,9 @@ func (m *Manager) Create(ctx context.Context, userID, provider, model string) (*
 	return m.CreateWithID(ctx, uuid.New().String(), userID, provider, model, "", "dashboard")
 }
 
-// CreateWithID starts a new session using the caller-supplied ID. Used by
-// the dashboard's first-turn flow so the client can stamp the session id
-// before the round-trip and avoid a duplicate-session race.
+// CreateWithID starts a new session using the caller-supplied ID. Used
+// by the dashboard's first-turn flow so the client can stamp the
+// session id before the round-trip and avoid a duplicate-session race.
 func (m *Manager) CreateWithID(ctx context.Context, id, userID, provider, model, title, source string) (*sdk.SessionRecord, error) {
 	if source == "" {
 		source = "dashboard"
@@ -58,15 +64,19 @@ func (m *Manager) CreateWithID(ctx context.Context, id, userID, provider, model,
 	m.sessions[session.ID] = session
 	m.mu.Unlock()
 
-	return session, nil
+	// Return a copy so callers can't mutate our cached pointer.
+	out := *session
+	return &out, nil
 }
 
-// Get returns a session by ID.
+// Get returns a session by ID. The returned pointer is a fresh copy of
+// the cached record, so callers may not mutate it through the manager.
 func (m *Manager) Get(ctx context.Context, id string) (*sdk.SessionRecord, error) {
 	m.mu.RLock()
 	if s, ok := m.sessions[id]; ok {
+		out := *s
 		m.mu.RUnlock()
-		return s, nil
+		return &out, nil
 	}
 	m.mu.RUnlock()
 
@@ -82,9 +92,11 @@ func (m *Manager) AddMessage(ctx context.Context, sessionID string, msg *sdk.Mes
 
 	now := time.Now().UTC()
 	m.mu.Lock()
-	if s, ok := m.sessions[sessionID]; ok {
-		s.UpdatedAt = now
-		s.LastMessageAt = now
+	if cur, ok := m.sessions[sessionID]; ok {
+		next := *cur
+		next.UpdatedAt = now
+		next.LastMessageAt = now
+		m.sessions[sessionID] = &next
 	}
 	m.mu.Unlock()
 
@@ -94,6 +106,8 @@ func (m *Manager) AddMessage(ctx context.Context, sessionID string, msg *sdk.Mes
 // Touch rewrites provider/model/last_message_at on the session row to
 // reflect the latest turn. Called after each task completes.
 func (m *Manager) Touch(ctx context.Context, sessionID, provider, model string) error {
+	// Resolve current state. Use Get so a cache miss falls back to the
+	// store; the returned pointer is already a fresh copy we can mutate.
 	sess, err := m.Get(ctx, sessionID)
 	if err != nil {
 		return err
@@ -103,9 +117,11 @@ func (m *Manager) Touch(ctx context.Context, sessionID, provider, model string) 
 	sess.Model = model
 	sess.UpdatedAt = now
 	sess.LastMessageAt = now
+
 	if err := m.store.UpdateSession(ctx, sess); err != nil {
 		return err
 	}
+
 	m.mu.Lock()
 	m.sessions[sessionID] = sess
 	m.mu.Unlock()
@@ -117,10 +133,13 @@ func (m *Manager) UpdateTitle(ctx context.Context, sessionID, title string) erro
 	if err := m.store.UpdateSessionTitle(ctx, sessionID, title); err != nil {
 		return err
 	}
+	now := time.Now().UTC()
 	m.mu.Lock()
-	if s, ok := m.sessions[sessionID]; ok {
-		s.Title = title
-		s.UpdatedAt = time.Now().UTC()
+	if cur, ok := m.sessions[sessionID]; ok {
+		next := *cur
+		next.Title = title
+		next.UpdatedAt = now
+		m.sessions[sessionID] = &next
 	}
 	m.mu.Unlock()
 	return nil

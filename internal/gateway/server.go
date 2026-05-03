@@ -178,7 +178,8 @@ func (s *Server) registerRoutes() {
 	// Session endpoints.
 	s.mux.HandleFunc("GET /api/v1/sessions", s.handleListSessions)
 	s.mux.HandleFunc("GET /api/v1/sessions/{id}", s.handleGetSession)
-	s.mux.HandleFunc("POST /api/v1/sessions/{id}/message", s.handleSendMessage)
+	s.mux.HandleFunc("PATCH /api/v1/sessions/{id}", s.handlePatchSession)
+	s.mux.HandleFunc("DELETE /api/v1/sessions/{id}", s.handleDeleteSession)
 
 	// Setup endpoint (first-install bootstrap).
 	s.mux.HandleFunc("GET /api/v1/setup/status", s.handleSetupStatus)
@@ -395,40 +396,6 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, tasks)
-}
-
-func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
-	sess, err := s.store.ListSessions(r.Context(), sdk.SessionFilter{
-		UserID: s.userID(r),
-		Limit:  50,
-	})
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to list sessions")
-		return
-	}
-	writeJSON(w, http.StatusOK, sess)
-}
-
-func (s *Server) handleGetSession(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	session, err := s.store.GetSession(r.Context(), id)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "session not found")
-		return
-	}
-	writeJSON(w, http.StatusOK, session)
-}
-
-func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Text string `json:"text"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	// TODO: Send message to existing session.
-	writeJSON(w, http.StatusAccepted, map[string]string{"status": "sent"})
 }
 
 func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {

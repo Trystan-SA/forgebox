@@ -45,6 +45,7 @@ func (p *captureProvider) Shutdown(_ context.Context) error { return nil }
 func (p *captureProvider) Models() []sdk.Model {
 	return []sdk.Model{{ID: "m1", Name: "capture-model", SupportsTools: false}}
 }
+
 func (p *captureProvider) Complete(_ context.Context, req *sdk.CompletionRequest) (*sdk.CompletionResponse, error) {
 	p.calls.Add(1)
 	msgs := append([]sdk.Message{}, req.Messages...)
@@ -54,6 +55,7 @@ func (p *captureProvider) Complete(_ context.Context, req *sdk.CompletionRequest
 		StopReason: "end_turn",
 	}, nil
 }
+
 func (p *captureProvider) Stream(_ context.Context, _ *sdk.CompletionRequest) (*sdk.StreamResponse, error) {
 	panic("Stream not used in this test")
 }

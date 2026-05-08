@@ -11,6 +11,12 @@ import (
 )
 
 // Manager handles session lifecycle and in-memory caching.
+//
+// The cache is read-mostly and treated as immutable from the outside:
+// pointers in the map are never mutated in place. Mutating methods
+// allocate a new SessionRecord, copy the current state, apply changes,
+// and atomically swap the pointer under Lock. Get returns a value copy
+// so callers can never alias a cached pointer.
 type Manager struct {
 	store    sdk.SessionStore
 	mu       sync.RWMutex
@@ -25,15 +31,29 @@ func NewManager(store sdk.SessionStore) *Manager {
 	}
 }
 
-// Create starts a new session.
+// Create starts a new session with a server-generated ID.
 func (m *Manager) Create(ctx context.Context, userID, provider, model string) (*sdk.SessionRecord, error) {
+	return m.CreateWithID(ctx, uuid.New().String(), userID, provider, model, "", "dashboard")
+}
+
+// CreateWithID starts a new session using the caller-supplied ID. Used
+// by the dashboard's first-turn flow so the client can stamp the
+// session id before the round-trip and avoid a duplicate-session race.
+func (m *Manager) CreateWithID(ctx context.Context, id, userID, provider, model, title, source string) (*sdk.SessionRecord, error) {
+	if source == "" {
+		source = "dashboard"
+	}
+	now := time.Now().UTC()
 	session := &sdk.SessionRecord{
-		ID:        uuid.New().String(),
-		UserID:    userID,
-		Provider:  provider,
-		Model:     model,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:            id,
+		UserID:        userID,
+		Provider:      provider,
+		Model:         model,
+		Title:         title,
+		Source:        source,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+		LastMessageAt: now,
 	}
 
 	if err := m.store.CreateSession(ctx, session); err != nil {
@@ -44,33 +64,95 @@ func (m *Manager) Create(ctx context.Context, userID, provider, model string) (*
 	m.sessions[session.ID] = session
 	m.mu.Unlock()
 
-	return session, nil
+	// Return a copy so callers can't mutate our cached pointer.
+	out := *session
+	return &out, nil
 }
 
-// Get returns a session by ID.
+// Get returns a session by ID. The returned pointer is a fresh copy of
+// the cached record, so callers may not mutate it through the manager.
 func (m *Manager) Get(ctx context.Context, id string) (*sdk.SessionRecord, error) {
 	m.mu.RLock()
 	if s, ok := m.sessions[id]; ok {
+		out := *s
 		m.mu.RUnlock()
-		return s, nil
+		return &out, nil
 	}
 	m.mu.RUnlock()
 
 	return m.store.GetSession(ctx, id)
 }
 
-// AddMessage appends a message to a session's transcript.
+// AddMessage appends a message to a session's transcript and bumps
+// last_message_at on the cached record.
 func (m *Manager) AddMessage(ctx context.Context, sessionID string, msg *sdk.Message) error {
 	if err := m.store.AppendMessage(ctx, sessionID, msg); err != nil {
 		return err
 	}
 
+	now := time.Now().UTC()
 	m.mu.Lock()
-	if s, ok := m.sessions[sessionID]; ok {
-		s.UpdatedAt = time.Now()
+	if cur, ok := m.sessions[sessionID]; ok {
+		next := *cur
+		next.UpdatedAt = now
+		next.LastMessageAt = now
+		m.sessions[sessionID] = &next
 	}
 	m.mu.Unlock()
 
+	return nil
+}
+
+// Touch rewrites provider/model/last_message_at on the session row to
+// reflect the latest turn. Called after each task completes.
+func (m *Manager) Touch(ctx context.Context, sessionID, provider, model string) error {
+	// Resolve current state. Use Get so a cache miss falls back to the
+	// store; the returned pointer is already a fresh copy we can mutate.
+	sess, err := m.Get(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	sess.Provider = provider
+	sess.Model = model
+	sess.UpdatedAt = now
+	sess.LastMessageAt = now
+
+	if err := m.store.UpdateSession(ctx, sess); err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	m.sessions[sessionID] = sess
+	m.mu.Unlock()
+	return nil
+}
+
+// UpdateTitle rewrites the title for a session.
+func (m *Manager) UpdateTitle(ctx context.Context, sessionID, title string) error {
+	if err := m.store.UpdateSessionTitle(ctx, sessionID, title); err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	m.mu.Lock()
+	if cur, ok := m.sessions[sessionID]; ok {
+		next := *cur
+		next.Title = title
+		next.UpdatedAt = now
+		m.sessions[sessionID] = &next
+	}
+	m.mu.Unlock()
+	return nil
+}
+
+// Delete removes a session and evicts the cache entry.
+func (m *Manager) Delete(ctx context.Context, sessionID string) error {
+	if err := m.store.DeleteSession(ctx, sessionID); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	delete(m.sessions, sessionID)
+	m.mu.Unlock()
 	return nil
 }
 

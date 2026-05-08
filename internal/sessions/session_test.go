@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/forgebox/forgebox/pkg/sdk"
 	"github.com/stretchr/testify/assert"
@@ -46,6 +47,23 @@ func (m *mockSessionStore) UpdateSession(_ context.Context, s *sdk.SessionRecord
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.sessions[s.ID] = s
+	return nil
+}
+
+func (m *mockSessionStore) UpdateSessionTitle(_ context.Context, id, title string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if s, ok := m.sessions[id]; ok {
+		s.Title = title
+	}
+	return nil
+}
+
+func (m *mockSessionStore) DeleteSession(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.sessions, id)
+	delete(m.messages, id)
 	return nil
 }
 
@@ -171,4 +189,77 @@ func TestList_FiltersByUserID(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, sessions, 1)
 	assert.Equal(t, "user-1", sessions[0].UserID)
+}
+
+func TestCreateWithID_UsesProvidedIDAndSeedsFields(t *testing.T) {
+	store := newMockStore()
+	mgr := NewManager(store)
+
+	sess, err := mgr.CreateWithID(context.Background(), "fixed-id", "user-1", "anthropic", "claude-x", "Hello world", "dashboard")
+	require.NoError(t, err)
+	assert.Equal(t, "fixed-id", sess.ID)
+	assert.Equal(t, "Hello world", sess.Title)
+	assert.Equal(t, "dashboard", sess.Source)
+	assert.False(t, sess.LastMessageAt.IsZero())
+	assert.Equal(t, sess.CreatedAt, sess.LastMessageAt)
+
+	got, err := mgr.Get(context.Background(), "fixed-id")
+	require.NoError(t, err)
+	assert.Equal(t, "Hello world", got.Title)
+}
+
+func TestCreateWithID_DefaultsEmptySourceToDashboard(t *testing.T) {
+	mgr := NewManager(newMockStore())
+	sess, err := mgr.CreateWithID(context.Background(), "id-1", "user-1", "p", "m", "title", "")
+	require.NoError(t, err)
+	assert.Equal(t, "dashboard", sess.Source)
+}
+
+func TestUpdateTitle_PersistsAndUpdatesCache(t *testing.T) {
+	store := newMockStore()
+	mgr := NewManager(store)
+
+	sess, err := mgr.Create(context.Background(), "user-1", "anthropic", "claude-x")
+	require.NoError(t, err)
+
+	require.NoError(t, mgr.UpdateTitle(context.Background(), sess.ID, "new title"))
+
+	got, err := mgr.Get(context.Background(), sess.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "new title", got.Title)
+	assert.Equal(t, "new title", store.sessions[sess.ID].Title)
+}
+
+func TestDelete_RemovesFromStoreAndCache(t *testing.T) {
+	store := newMockStore()
+	mgr := NewManager(store)
+
+	sess, err := mgr.Create(context.Background(), "user-1", "anthropic", "claude-x")
+	require.NoError(t, err)
+
+	require.NoError(t, mgr.Delete(context.Background(), sess.ID))
+
+	_, err = mgr.Get(context.Background(), sess.ID)
+	assert.Error(t, err, "deleted session should not be retrievable")
+
+	_, ok := store.sessions[sess.ID]
+	assert.False(t, ok, "session should be removed from store")
+}
+
+func TestTouch_UpdatesProviderModelAndLastMessageAt(t *testing.T) {
+	store := newMockStore()
+	mgr := NewManager(store)
+
+	sess, err := mgr.Create(context.Background(), "user-1", "anthropic", "claude-x")
+	require.NoError(t, err)
+	earlier := sess.LastMessageAt
+	time.Sleep(2 * time.Millisecond)
+
+	require.NoError(t, mgr.Touch(context.Background(), sess.ID, "openai", "gpt-7"))
+
+	got, err := mgr.Get(context.Background(), sess.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "openai", got.Provider)
+	assert.Equal(t, "gpt-7", got.Model)
+	assert.True(t, got.LastMessageAt.After(earlier))
 }

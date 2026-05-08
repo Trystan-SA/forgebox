@@ -32,6 +32,8 @@ type SessionStore interface {
 	CreateSession(ctx context.Context, session *SessionRecord) error
 	GetSession(ctx context.Context, id string) (*SessionRecord, error)
 	UpdateSession(ctx context.Context, session *SessionRecord) error
+	UpdateSessionTitle(ctx context.Context, id, title string) error
+	DeleteSession(ctx context.Context, id string) error
 	ListSessions(ctx context.Context, filter SessionFilter) ([]*SessionRecord, error)
 	AppendMessage(ctx context.Context, sessionID string, msg *Message) error
 	GetTranscript(ctx context.Context, sessionID string) ([]Message, error)
@@ -93,12 +95,15 @@ type TaskFilter struct {
 
 // SessionRecord represents a stored session.
 type SessionRecord struct {
-	ID        string    `json:"id"`
-	UserID    string    `json:"user_id"`
-	Provider  string    `json:"provider"`
-	Model     string    `json:"model"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID            string    `json:"id"`
+	UserID        string    `json:"user_id"`
+	Provider      string    `json:"provider"`
+	Model         string    `json:"model"`
+	Title         string    `json:"title"`
+	Source        string    `json:"source"`           // "dashboard", "slack", etc.
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	LastMessageAt time.Time `json:"last_message_at"`
 }
 
 // SessionFilter specifies criteria for listing sessions.

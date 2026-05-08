@@ -92,58 +92,109 @@ func (s *Store) ListTasks(ctx context.Context, filter sdk.TaskFilter) ([]*sdk.Ta
 
 // CreateSession persists a new session record.
 func (s *Store) CreateSession(ctx context.Context, session *sdk.SessionRecord) error {
+	if session.LastMessageAt.IsZero() {
+		session.LastMessageAt = session.CreatedAt
+	}
+	if session.Source == "" {
+		session.Source = "dashboard"
+	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO sessions (id, user_id, provider, model, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+		`INSERT INTO sessions (id, user_id, provider, model, title, source, created_at, updated_at, last_message_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 		session.ID, session.UserID, session.Provider, session.Model,
-		session.CreatedAt, session.UpdatedAt,
+		session.Title, session.Source,
+		session.CreatedAt, session.UpdatedAt, session.LastMessageAt,
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("insert session: %w", err)
+	}
+	return nil
 }
 
 // GetSession retrieves a session by ID.
 func (s *Store) GetSession(ctx context.Context, id string) (*sdk.SessionRecord, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT id, user_id, provider, model, created_at, updated_at FROM sessions WHERE id = $1`, id)
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, user_id, provider, model, title, source, created_at, updated_at, last_message_at
+		 FROM sessions WHERE id = $1`, id)
 	var sess sdk.SessionRecord
-	if err := row.Scan(&sess.ID, &sess.UserID, &sess.Provider, &sess.Model, &sess.CreatedAt, &sess.UpdatedAt); err != nil {
+	if err := row.Scan(&sess.ID, &sess.UserID, &sess.Provider, &sess.Model,
+		&sess.Title, &sess.Source,
+		&sess.CreatedAt, &sess.UpdatedAt, &sess.LastMessageAt); err != nil {
 		return nil, err
 	}
 	return &sess, nil
 }
 
-// UpdateSession updates the updated_at timestamp for a session.
+// UpdateSession persists mutable fields on a session: provider, model,
+// updated_at, and last_message_at. Title is handled separately via
+// UpdateSessionTitle.
 func (s *Store) UpdateSession(ctx context.Context, session *sdk.SessionRecord) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE sessions SET updated_at = $1 WHERE id = $2`,
-		session.UpdatedAt, session.ID,
+		`UPDATE sessions
+		    SET provider = $1, model = $2, updated_at = $3, last_message_at = $4
+		  WHERE id = $5`,
+		session.Provider, session.Model, session.UpdatedAt, session.LastMessageAt,
+		session.ID,
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("update session: %w", err)
+	}
+	return nil
 }
 
-// ListSessions returns sessions matching the given filter.
+// UpdateSessionTitle rewrites the title for a session. The caller is
+// responsible for any trimming or fallback logic.
+func (s *Store) UpdateSessionTitle(ctx context.Context, id, title string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE sessions SET title = $1, updated_at = now() WHERE id = $2`,
+		title, id,
+	)
+	if err != nil {
+		return fmt.Errorf("update session title: %w", err)
+	}
+	return nil
+}
+
+// DeleteSession removes a session and cascades to its messages. Tasks
+// retain their session_id reference until the FK's ON DELETE SET NULL
+// fires (handled by the database).
+func (s *Store) DeleteSession(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete session: %w", err)
+	}
+	return nil
+}
+
+// ListSessions returns sessions matching the given filter, ordered by
+// last_message_at DESC.
 func (s *Store) ListSessions(ctx context.Context, filter sdk.SessionFilter) ([]*sdk.SessionRecord, error) {
-	query := `SELECT id, user_id, provider, model, created_at, updated_at FROM sessions WHERE 1=1`
+	query := `SELECT id, user_id, provider, model, title, source, created_at, updated_at, last_message_at
+			    FROM sessions WHERE 1=1`
 	args := []any{}
 	i := 1
 	if filter.UserID != "" {
 		query += fmt.Sprintf(" AND user_id = $%d", i)
 		args = append(args, filter.UserID)
 	}
-	query += " ORDER BY updated_at DESC"
+	query += " ORDER BY last_message_at DESC"
 	if filter.Limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", filter.Limit)
 	}
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list sessions: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
 	var sessions []*sdk.SessionRecord
 	for rows.Next() {
 		var sess sdk.SessionRecord
-		if err := rows.Scan(&sess.ID, &sess.UserID, &sess.Provider, &sess.Model, &sess.CreatedAt, &sess.UpdatedAt); err != nil {
-			return nil, err
+		if err := rows.Scan(&sess.ID, &sess.UserID, &sess.Provider, &sess.Model,
+			&sess.Title, &sess.Source,
+			&sess.CreatedAt, &sess.UpdatedAt, &sess.LastMessageAt); err != nil {
+			return nil, fmt.Errorf("scan session: %w", err)
 		}
 		sessions = append(sessions, &sess)
 	}
@@ -154,38 +205,55 @@ func (s *Store) ListSessions(ctx context.Context, filter sdk.SessionFilter) ([]*
 func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg *sdk.Message) error {
 	toolCalls, _ := json.Marshal(msg.ToolCalls)
 	toolResults, _ := json.Marshal(msg.ToolResults)
+	if msg.CreatedAt.IsZero() {
+		msg.CreatedAt = time.Now().UTC()
+	}
+	var taskID sql.NullString
+	if msg.TaskID != "" {
+		taskID = sql.NullString{String: msg.TaskID, Valid: true}
+	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO messages (id, session_id, role, content, tool_calls, tool_results, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		`INSERT INTO messages
+		    (id, session_id, role, content, tool_calls, tool_results, provider, model, task_id, created_at)
+		  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 		uuid.New().String(), sessionID, msg.Role, msg.Content,
-		string(toolCalls), string(toolResults), time.Now().UTC(),
+		string(toolCalls), string(toolResults),
+		msg.Provider, msg.Model, taskID, msg.CreatedAt,
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("append message: %w", err)
+	}
+	return nil
 }
 
 // GetTranscript retrieves all messages for a session in chronological order.
 func (s *Store) GetTranscript(ctx context.Context, sessionID string) ([]sdk.Message, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT role, content, tool_calls, tool_results FROM messages WHERE session_id = $1 ORDER BY created_at`, sessionID)
+		`SELECT role, content, tool_calls, tool_results, provider, model, task_id, created_at
+		   FROM messages
+		  WHERE session_id = $1
+		  ORDER BY created_at`, sessionID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query transcript: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
 	var messages []sdk.Message
 	for rows.Next() {
 		var msg sdk.Message
-		var content sql.NullString
-		var toolCalls, toolResults sql.NullString
-		if err := rows.Scan(&msg.Role, &content, &toolCalls, &toolResults); err != nil {
-			return nil, err
+		var content, toolCalls, toolResults, taskID sql.NullString
+		if err := rows.Scan(&msg.Role, &content, &toolCalls, &toolResults,
+			&msg.Provider, &msg.Model, &taskID, &msg.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan message: %w", err)
 		}
 		msg.Content = content.String
-		if toolCalls.Valid {
+		if toolCalls.Valid && toolCalls.String != "" {
 			_ = json.Unmarshal([]byte(toolCalls.String), &msg.ToolCalls)
 		}
-		if toolResults.Valid {
+		if toolResults.Valid && toolResults.String != "" {
 			_ = json.Unmarshal([]byte(toolResults.String), &msg.ToolResults)
 		}
+		msg.TaskID = taskID.String
 		messages = append(messages, msg)
 	}
 	return messages, rows.Err()

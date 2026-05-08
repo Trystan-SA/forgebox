@@ -176,7 +176,6 @@ func (s *Store) ListSessions(ctx context.Context, filter sdk.SessionFilter) ([]*
 	if filter.UserID != "" {
 		query += fmt.Sprintf(" AND user_id = $%d", i)
 		args = append(args, filter.UserID)
-		i++
 	}
 	query += " ORDER BY last_message_at DESC"
 	if filter.Limit > 0 {
